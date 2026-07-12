@@ -1,0 +1,312 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  PROFESSIONAL
+  UNIVERSITY_ADMIN
+  SUPPORT
+  CONTENT_MODERATOR
+  PLATFORM_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  PENDING_VERIFICATION
+}
+
+enum LectureState {
+  DRAFT
+  RECORDING
+  UPLOADING
+  UPLOADED
+  QUEUED
+  TRANSCRIBING
+  TRANSCRIBED
+  ANALYZING
+  READY
+  FAILED
+  DELETED
+}
+
+enum ProcessingJobState {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTERED
+}
+
+enum JobType {
+  TRANSCRIPTION
+  LECTURE_SUMMARY
+  KEY_CONCEPT_EXTRACTION
+  FLASHCARD_GENERATION
+  EMBEDDING_GENERATION
+}
+
+enum UsageKind {
+  TRANSCRIPTION_MINUTES
+  AI_TOKENS
+  STORAGE_BYTES
+}
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  email        String       @unique
+  passwordHash String
+  fullName     String
+  status       UserStatus   @default(PENDING_VERIFICATION)
+  roles        Role[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  profile        UserProfile?
+  courses        Course[]
+  lectures       Lecture[]
+  sessions       Session[]
+  auditLogs      AuditLog[]
+  consentRecords ConsentRecord[]
+  usageEvents    UsageEvent[]
+}
+
+model UserProfile {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @db.Uuid
+  role               String
+  institution        String?
+  degree             String?
+  semester           String?
+  preferredLanguage  String   @default("de")
+  studyGoals         String[]
+  consentAcknowledged Boolean @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  refreshToken String
+  revoked      Boolean  @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RoleAssignment {
+  id     String @id @default(uuid()) @db.Uuid
+  name   String
+}
+
+model Course {
+  id            String      @id @default(uuid()) @db.Uuid
+  ownerId       String      @db.Uuid
+  title         String
+  description    String?
+  color         String?
+  nextExamDate  DateTime?
+  lectureCount  Int         @default(0)
+  weakTopics    String[]
+  progress      Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  owner         User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members       CourseMember[]
+  lectures      Lecture[]
+  flashcards    Flashcard[]
+}
+
+model CourseMember {
+  id       String  @id @default(uuid()) @db.Uuid
+  courseId String  @db.Uuid
+  userId   String  @db.Uuid
+  role     String  @default("MEMBER")
+  course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Lecture {
+  id              String       @id @default(uuid()) @db.Uuid
+  courseId        String?      @db.Uuid
+  ownerId         String       @db.Uuid
+  title           String
+  state           LectureState @default(DRAFT)
+  audioFileId     String?      @db.Uuid
+  durationSeconds Int?
+  consentAcknowledged Boolean  @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  owner           User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  course          Course?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  audioFile       LectureAudioFile?
+  segments        TranscriptSegment[]
+  summaries       LectureSummary[]
+  keyConcepts     KeyConcept[]
+  flashcards      Flashcard[]
+}
+
+model LectureAudioFile {
+  id        String   @id @default(uuid()) @db.Uuid
+  lectureId String   @db.Uuid @unique
+  fileName  String
+  mimeType  String
+  fileSize  Int
+  url       String
+  createdAt DateTime @default(now())
+  lecture   Lecture  @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+}
+
+model TranscriptSegment {
+  id            String   @id @default(uuid()) @db.Uuid
+  lectureId     String   @db.Uuid
+  index         Int
+  speaker       String?
+  text          String
+  timestampStart Float
+  timestampEnd  Float
+  lecture       Lecture  @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+}
+
+model LectureSummary {
+  id        String   @id @default(uuid()) @db.Uuid
+  lectureId String   @db.Uuid
+  content   String
+  createdAt DateTime @default(now())
+  lecture   Lecture  @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+}
+
+model KeyConcept {
+  id          String   @id @default(uuid()) @db.Uuid
+  lectureId   String   @db.Uuid
+  label       String
+  description String
+  lecture     Lecture  @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+}
+
+model Flashcard {
+  id        String   @id @default(uuid()) @db.Uuid
+  lectureId String   @db.Uuid
+  courseId  String?  @db.Uuid
+  question  String
+  answer    String
+  lecture   Lecture  @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+}
+
+model Document {
+  id        String    @id @default(uuid()) @db.Uuid
+  ownerId   String    @db.Uuid
+  title     String
+  fileUrl   String
+  createdAt DateTime  @default(now())
+  pages     DocumentPage[]
+  embeddings Embedding[]
+}
+
+model DocumentPage {
+  id        String   @id @default(uuid()) @db.Uuid
+  documentId String  @db.Uuid
+  pageNumber Int
+  text      String
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model Embedding {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @db.Uuid
+  segmentId  String?
+  vector     Float[]  @db.Float[]
+  model      String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model ChatThread {
+  id        String       @id @default(uuid()) @db.Uuid
+  ownerId   String       @db.Uuid
+  courseId  String?      @db.Uuid
+  title     String?
+  createdAt DateTime     @default(now())
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id        String     @id @default(uuid()) @db.Uuid
+  threadId  String     @db.Uuid
+  role      String
+  content   String
+  citations Json?
+  createdAt DateTime   @default(now())
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+}
+
+model ProcessingJob {
+  id              String            @id @default(uuid()) @db.Uuid
+  jobType         JobType
+  status          ProcessingJobState @default(PENDING)
+  retryCount      Int               @default(0)
+  maxRetries      Int               @default(3)
+  errorCode       String?
+  safeErrorMessage String?
+  diagnosticReference String?
+  payload          Json
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  startedAt        DateTime?
+  completedAt      DateTime?
+}
+
+model UsageEvent {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  kind      UsageKind
+  amount    Float
+  recordedAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  actorType  String
+  action     String
+  resource   String
+  resourceId String?  @db.Uuid
+  requestId  String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+}
+
+model ConsentRecord {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  purpose   String
+  acknowledged Boolean
+  version   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DataExportRequest {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  status    String   @default("REQUESTED")
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+}
+
+model DeletionRequest {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  status    String   @default("REQUESTED")
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+}

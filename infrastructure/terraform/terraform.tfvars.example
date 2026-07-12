@@ -1,0 +1,13 @@
+# Terraform variables example. Copy to terraform.tfvars and fill in real values.
+# Never commit secrets or real identifiers to version control.
+project_name            = "mindflow"
+environment             = "dev"
+location                = "swedencentral"
+postgres_admin_username = "mindflow"
+postgres_admin_password = "REPLACE_WITH_KEY_VAULT_SECRET"
+tenant_id               = "REPLACE_WITH_AZURE_AD_TENANT_ID"
+
+tags = {
+  project   = "fariha-mindflow-ai"
+  managedBy = "terraform"
+}
