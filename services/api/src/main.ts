@@ -1,7 +1,5 @@
-import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import cors from 'cors';
@@ -38,14 +36,7 @@ async function bootstrap(): Promise<void> {
 
   app.enableShutdownHooks();
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Fariha MindFlow AI API')
-    .setDescription('REST API for the Fariha MindFlow AI learning companion.')
-    .setVersion(API_VERSION)
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+   // Swagger disabled for local development
 
   await app.listen(env.API_PORT, '0.0.0.0');
   logger.log(`API listening on http://0.0.0.0:${env.API_PORT}/${API_PREFIX}`, {
