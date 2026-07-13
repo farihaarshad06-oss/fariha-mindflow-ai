@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
-import helmet from 'helmet';
-import compression from 'compression';
+import { helmet } from 'helmet';
+import { compression } from 'compression';
 import cors from 'cors';
 import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
@@ -10,20 +10,26 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
 import { API_PREFIX, env } from './core/env';
 import { LoggerService } from './core/logger.service';
 import { API_VERSION } from '@mindflow/config';
+import { LoggerService } from './core/logger.service';
+import { EnvironmentValidationService } from './core/env-validation.service';
 
 async function bootstrap(): Promise<void> {
   const logger = new LoggerService();
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(logger);
-
+  
+  // Validate environment configuration
+  const envValidator = new EnvironmentValidationService();
+  envValidator.validate();
+  
   app.setGlobalPrefix(API_PREFIX);
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-
+  
   app.use(helmet());
   app.use(compression());
   app.use(cors({ origin: env.CORS_ORIGINS, credentials: true }));
   app.use(new RequestIdMiddleware().use as (req: Request, res: Response, next: NextFunction) => void);
-
+  
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -33,11 +39,10 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
-
+  
+  // Enable health checks
   app.enableShutdownHooks();
-
-   // Swagger disabled for local development
-
+  
   await app.listen(env.API_PORT, '0.0.0.0');
   logger.log(`API listening on http://0.0.0.0:${env.API_PORT}/${API_PREFIX}`, {
     environment: env.NODE_ENV,

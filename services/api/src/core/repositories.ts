@@ -1,269 +1,862 @@
-import { randomUUID } from 'node:crypto';
-import type {
-  User,
-  Course,
-  Lecture,
-  ProcessingJob,
-  UsageEvent,
-  AuditLog,
-  ConsentRecord,
-  UserProfile,
-  Role,
-} from '@mindflow/types';
+import { PrismaClient } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { JwtService } from '../core/jwt.service';
+import { UsersRepository } from './users.service';
+import { CoursesRepository } from './courses.service';
+import { LecturesRepository } from './lectures.service';
+import { ProcessingJobsRepository } from './processing-jobs.service';
+import { UsageRepository } from './usage.service';
+import { AuditRepository } from './audit.service';
+import { ConsentRepository } from './consent.service';
+import type { User, Course, Lecture, ProcessingJob, UsageEvent, AuditLog, ConsentRecord, UserProfile } from '@mindflow/types';
 
-export interface StoredUser extends User {
-  passwordHash: string;
-}
-
-export interface StoredLecture extends Lecture {
-  consentAcknowledged: boolean;
-  transcript?: string;
-}
-
+@Injectable()
 export class UsersRepository {
-  private readonly users = new Map<string, StoredUser>();
-  private readonly profiles = new Map<string, UserProfile>();
+  private prisma: PrismaClient;
 
-  create(input: Omit<StoredUser, 'id' | 'createdAt' | 'updatedAt' | 'status'>): StoredUser {
-    const now = new Date().toISOString();
-    const user: StoredUser = {
-      id: randomUUID(),
-      status: 'PENDING_VERIFICATION',
-      createdAt: now,
-      updatedAt: now,
-      ...input,
-    };
-    this.users.set(user.id, user);
-    return user;
+  constructor() {
+    this.prisma = new PrismaClient();
   }
 
-  findByEmail(email: string): StoredUser | undefined {
-    const normalized = email.toLowerCase();
-    for (const user of this.users.values()) {
-      if (user.email.toLowerCase() === normalized) return user;
+  async create(input: Omit<StoredUser, 'id' | 'createdAt' | 'updatedAt' | 'status'>): Promise<StoredUser> {
+    const now = new Date().toISOString();
+    const user = await this.prisma.user.create({
+      data: {
+        ...input,
+        status: 'PENDING_VERIFICATION',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    return toPublicUser(user);
+  }
+
+  async findByEmail(email: string): Promise<StoredUser | undefined> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+    if (user) {
+      return toPublicUser(user);
     }
     return undefined;
   }
 
-  findById(id: string): StoredUser | undefined {
-    return this.users.get(id);
+  async findById(id: string): Promise<StoredUser | undefined> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+    });
+    if (user) {
+      return toPublicUser(user);
+    }
+    return undefined;
   }
 
-  save(user: StoredUser): StoredUser {
-    this.users.set(user.id, user);
-    return user;
+  async save(user: StoredUser): Promise<StoredUser> {
+    const existing = await this.prisma.user.findUnique({ where: { id: user.id } });
+    if (user) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...user,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    } else {
+      await this.prisma.user.create({
+        data: {
+          ...user,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
+    return toPublicUser(await this.prisma.user.findUnique({ where: { id: user.id } }));
   }
 
-  list(): StoredUser[] {
-    return [...this.users.values()];
-  }
-
-  createProfile(input: Omit<UserProfile, 'id' | 'createdAt' | 'updatedAt'>): UserProfile {
-    const now = new Date().toISOString();
-    const profile: UserProfile = {
-      id: randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-      ...input,
-    };
-    this.profiles.set(profile.id, profile);
-    return profile;
+  async list(): Promise<StoredUser[]> {
+    const users = await this.prisma.user.findMany();
+    return users.map(toPublicUser);
   }
 }
 
 export class CoursesRepository {
-  private readonly courses = new Map<string, Course>();
+  private prisma: PrismaClient;
 
-  create(input: Omit<Course, 'id' | 'createdAt' | 'updatedAt' | 'lectureCount' | 'weakTopics' | 'progress'>): Course {
+  constructor() {
+    this.prisma = new PrismaClient();
+  }
+
+  async create(input: Omit<Course, 'id' | 'createdAt' | 'updatedAt' | 'lectureCount' | 'weakTopics' | 'progress'>): Promise<Course> {
     const now = new Date().toISOString();
-    const course: Course = {
-      id: randomUUID(),
-      lectureCount: 0,
-      weakTopics: [],
-      progress: 0,
-      createdAt: now,
-      updatedAt: now,
-      ...input,
-    };
-    this.courses.set(course.id, course);
-    return course;
+    const course = await this.prisma.course.create({
+      data: {
+        ...input,
+        lectureCount: 0,
+        weakTopics: [],
+        progress: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    return this.toPublicCourse(course);
   }
 
-  findById(id: string): Course | undefined {
-    return this.courses.get(id);
+  async findById(id: string): Promise<Course | undefined> {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+    });
+    if (course) {
+      return this.toPublicCourse(course);
+    }
+    return undefined;
   }
 
-  listByOwner(ownerId: string): Course[] {
-    return [...this.courses.values()].filter((course) => course.ownerId === ownerId);
+  async getForOwner(id: string, ownerId: string): Promise<Course> {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      include: { owner: true },
+    });
+    if (course && course.ownerId === ownerId) {
+      return this.toPublicCourse(course);
+    }
+    throw new Error('Access denied');
   }
 
-  list(): Course[] {
-    return [...this.courses.values()];
+  async create(input: { title: string; description?: string; color?: string; nextExamDate?: string }, ownerId: string): Promise<Course> {
+    const now = new Date().toISOString();
+    const course = await this.prisma.course.create({
+      data: {
+        ...input,
+        ownerId,
+        lectureCount: 0,
+        weakTopics: [],
+        progress: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    return this.toPublicCourse(course);
   }
 
-  save(course: Course): Course {
-    this.courses.set(course.id, course);
-    return course;
-  }
-
-  remove(id: string): void {
-    this.courses.delete(id);
+  async remove(id: string, ownerId: string): Promise<{ id: string }> {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+    });
+    if (!course) {
+      throw new Error('Course not found');
+    }
+    if (course.ownerId !== ownerId) {
+      throw new Error('Access denied');
+    }
+    await this.prisma.course.delete({ where: { id } });
+    return { id };
   }
 }
 
 export class LecturesRepository {
-  private readonly lectures = new Map<string, StoredLecture>();
+  private prisma: PrismaClient;
 
-  create(input: Omit<StoredLecture, 'id' | 'createdAt' | 'updatedAt'>): StoredLecture {
+  constructor() {
+    this.prisma = new PrismaClient();
+  }
+
+  async create(input: Omit<StoredLecture, 'id' | 'createdAt' | 'updatedAt'>): Promise<StoredLecture> {
     const now = new Date().toISOString();
-    const lecture: StoredLecture = {
-      id: randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-      ...input,
-    };
-    this.lectures.set(lecture.id, lecture);
-    return lecture;
+    const lecture = await this.prisma.lecture.create({
+      data: {
+        ...input,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    return this.toStoredLecture(lecture);
   }
 
-  findById(id: string): StoredLecture | undefined {
-    return this.lectures.get(id);
+  async findById(id: string): Promise<StoredLecture | undefined> {
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id },
+    });
+    if (lecture) {
+      return this.toStoredLecture(lecture);
+    }
+    return undefined;
   }
 
-  listByOwner(ownerId: string): StoredLecture[] {
-    return [...this.lectures.values()].filter((lecture) => lecture.ownerId === ownerId);
+  async findByIdWithOwner(id: string, ownerId: string): Promise<StoredLecture | undefined> {
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id },
+      include: { owner: true },
+    });
+    if (lecture) {
+      if (lecture.ownerId === ownerId) {
+        return this.toStoredLecture(lecture);
+      } else {
+        throw new Error('Access denied');
+      }
+    }
+    return undefined;
   }
 
-  list(): StoredLecture[] {
-    return [...this.lectures.values()];
+  async listByOwner(ownerId: string): Promise<StoredLecture[]> {
+    return this.prisma.lecture.findMany({
+      where: { ownerId },
+    }).then(lectures => lectures.map(this.toStoredLecture));
   }
 
-  save(lecture: StoredLecture): StoredLecture {
-    this.lectures.set(lecture.id, lecture);
-    return lecture;
+  async list(): Promise<StoredLecture[]> {
+    return this.prisma.lecture.findMany().then(lectures => lectures.map(this.toStoredLecture));
   }
 
-  remove(id: string): void {
-    this.lectures.delete(id);
+  async save(lecture: StoredLecture): Promise<StoredLecture> {
+    const existing = await this.prisma.lecture.findUnique({ where: { id: lecture.id } });
+    if (existing) {
+      return this.prisma.lecture.update({
+        where: { id: lecture.id },
+        data: {
+          ...lecture,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    } else {
+      return this.prisma.lecture.create({
+        data: {
+          ...lecture,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  async remove(id: string, ownerId: string): Promise<void> {
+    const lecture = await this.prisma.lecture.findUnique({
+      where: { id },
+    });
+    if (!lecture) {
+      throw new Error('Lecture not found');
+    }
+    if (lecture.ownerId !== ownerId) {
+      throw new Error('Access denied');
+    }
+    await this.prisma.lecture.delete({ where: { id } });
   }
 }
 
 export class ProcessingJobsRepository {
-  private readonly jobs = new Map<string, ProcessingJob>();
+  private prisma: PrismaClient;
 
-  create(input: Omit<ProcessingJob, 'id' | 'createdAt' | 'updatedAt'>): ProcessingJob {
+  constructor() {
+    this.prisma = new PrismaClient();
+  }
+
+  async create(input: Omit<ProcessingJob, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingJob> {
     const now = new Date().toISOString();
-    const job: ProcessingJob = {
-      id: randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-      ...input,
-    };
-    this.jobs.set(job.id, job);
-    return job;
+    const job = await this.prisma.processingJob.create({
+      data: {
+        ...input,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    return this.toStoredJob(job);
   }
 
-  findById(id: string): ProcessingJob | undefined {
-    return this.jobs.get(id);
+  async findById(id: string): Promise<ProcessingJob | undefined> {
+    const job = await this.prisma.processingJob.findUnique({
+      where: { id },
+    });
+    if (job) {
+      return this.toStoredJob(job);
+    }
+    return undefined;
   }
 
-  list(): ProcessingJob[] {
-    return [...this.jobs.values()];
+  async list(): Promise<ProcessingJob[]> {
+    return this.prisma.processingJob.findMany().then(jobs => jobs.map(this.toStoredJob));
   }
 
-  save(job: ProcessingJob): ProcessingJob {
-    this.jobs.set(job.id, job);
-    return job;
+  async save(job: ProcessingJob): Promise<ProcessingJob> {
+    const existing = await this.prisma.processingJob.findUnique({ where: { id: job.id } });
+    if (existing) {
+      return this.prisma.processingJob.update({
+        where: { id: job.id },
+        data: {
+          ...job,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    } else {
+      return this.prisma.processingJob.create({
+        data: {
+          ...job,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    }
   }
 }
 
 export class UsageRepository {
-  private readonly events = new Map<string, UsageEvent>();
+  private prisma: PrismaClient;
 
-  create(input: Omit<UsageEvent, 'id' | 'recordedAt'>): UsageEvent {
-    const event: UsageEvent = {
-      id: randomUUID(),
-      recordedAt: new Date().toISOString(),
-      ...input,
-    };
-    this.events.set(event.id, event);
-    return event;
+  constructor() {
+    this.prisma = new PrismaClient();
   }
 
-  list(): UsageEvent[] {
-    return [...this.events.values()];
+  async create(input: Omit<UsageEvent, 'id' | 'recordedAt'>): Promise<UsageEvent> {
+    const event = await this.prisma.usageEvent.create({
+      data: {
+        ...input,
+        recordedAt: new Date().toISOString(),
+      },
+    });
+    return this.toStoredEvent(event);
+  }
+
+  async list(): Promise<UsageEvent[]> {
+    return this.prisma.usageEvent.findMany().then(events => events.map(this.toStoredEvent));
   }
 }
 
 export class AuditRepository {
-  private readonly logs = new Map<string, AuditLog>();
+  private prisma: PrismaClient;
 
-  create(input: Omit<AuditLog, 'id' | 'createdAt'>): AuditLog {
-    const log: AuditLog = {
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      ...input,
-    };
-    this.logs.set(log.id, log);
-    return log;
+  constructor() {
+    this.prisma = new PrismaClient();
   }
 
-  list(): AuditLog[] {
-    return [...this.logs.values()];
-  }
-}
-
-export interface StoredUpload {
-  id: string;
-  ownerId: string;
-  purpose: 'LECTURE_AUDIO' | 'COURSE_DOCUMENT';
-  fileName: string;
-  mimeType: string;
-  fileSize: number;
-  status: 'REQUESTED' | 'COMPLETED' | 'DELETED';
-  uploadUrl?: string;
-  createdAt: string;
-}
-
-export class UploadRepository {
-  private readonly uploads = new Map<string, StoredUpload>();
-
-  create(input: Omit<StoredUpload, 'id' | 'createdAt' | 'status'>): StoredUpload {
-    const upload: StoredUpload = {
-      id: randomUUID(),
-      status: 'REQUESTED',
-      createdAt: new Date().toISOString(),
-      ...input,
-    };
-    this.uploads.set(upload.id, upload);
-    return upload;
+  async create(input: Omit<AuditLog, 'id' | 'createdAt'>): Promise<AuditLog> {
+    const log = await this.prisma.auditLog.create({
+      data: {
+        ...input,
+        createdAt: new Date().toISOString(),
+      },
+    });
+    return this.toStoredLog(log);
   }
 
-  findById(id: string): StoredUpload | undefined {
-    return this.uploads.get(id);
-  }
-
-  save(upload: StoredUpload): StoredUpload {
-    this.uploads.set(upload.id, upload);
-    return upload;
+  async list(): Promise<AuditLog[]> {
+    return this.prisma.auditLog.findMany().then(logs => logs.map(this.toStoredLog));
   }
 }
 
-export interface StoredConsent extends ConsentRecord {}
 export class ConsentRepository {
-  private readonly records = new Map<string, StoredConsent>();
-  create(input: Omit<StoredConsent, 'id' | 'createdAt'>): StoredConsent {
-    const record: StoredConsent = {
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      ...input,
-    };
-    this.records.set(record.id, record);
-    return record;
+  private prisma: PrismaClient;
+
+  constructor() {
+    this.prisma = new PrismaClient();
   }
-  listByUser(userId: string): StoredConsent[] {
-    return [...this.records.values()].filter((r) => r.userId === userId);
+
+  async create(input: Omit<StoredConsent, 'id' | 'createdAt'>): Promise<StoredConsent> {
+    const record = await this.prisma.consentRecord.create({
+      data: {
+        ...input,
+        createdAt: new Date().toISOString(),
+      },
+    });
+    return this.toStoredConsent(record);
+  }
+
+  async listByUser(userId: string): Promise<StoredConsent[]> {
+    return this.prisma.consentRecord.findMany({
+      where: { userId },
+    }).then(records => records.map(this.toStoredConsent));
   }
 }
 
-export type { Role };
+function toPublicUser(user: any): StoredUser {
+  return {
+    id: user.id,
+    email: user.email,
+    passwordHash: user.passwordHash,
+    fullName: user.fullName,
+    status: user.status,
+    roles: user.roles,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
+function toPublicUserProfile(profile: any): UserProfile {
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    role: profile.role,
+    institution: profile.institution,
+    degree: profile.degree,
+    semester: profile.semester,
+    preferredLanguage: profile.preferredLanguage,
+    studyGoals: profile.studyGoals,
+    consentAcknowledged: profile.consentAcknowledged,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
+
+function toPublicUserProfile(profile: any): UserProfile {
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    role: profile.role,
+    institution: profile.institution,
+    degree: profile.degree,
+    semester: profile.semester,
+    preferredLanguage: profile.preferredLanguage,
+    studyGoals: profile.studyGoals,
+    consentAcknowledged: profile.consentAcknowledged,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
+
+function toPublicCourse(course: any): Course {
+  return {
+    id: course.id,
+    ownerId: course.ownerId,
+    title: course.title,
+    description: course.description,
+    color: course.color,
+    nextExamDate: course.nextExamDate,
+    lectureCount: course.lectureCount,
+    weakTopics: course.weakTopics,
+    progress: course.progress,
+    createdAt: course.createdAt,
+    updatedAt: course.updatedAt,
+  };
+}
+
+function toStoredCourse(course: any): Course {
+  return {
+    id: course.id,
+    ownerId: course.ownerId,
+    title: course.title,
+    description: course.description,
+    color: course.color,
+    nextExamDate: course.nextExamDate,
+    lectureCount: course.lectureCount,
+    weakTopics: course.weakTopics,
+    progress: course.progress,
+    createdAt: course.createdAt,
+    updatedAt: course.updatedAt,
+  };
+}
+
+function toStoredCourseWithOwner(course: any): StoredCourse {
+  return {
+    id: course.id,
+    ownerId: course.ownerId,
+    title: course.title,
+    description: course.description,
+    color: course.color,
+    nextExamDate: course.nextExamDate,
+    lectureCount: course.lectureCount,
+    weakTopics: course.weakTopics,
+    progress: course.progress,
+    createdAt: course.createdAt,
+    updatedAt: course.updatedAt,
+  };
+}
+
+function toStoredLecture(course: any): StoredLecture {
+  return {
+    id: course.id,
+    courseId: course.courseId,
+    ownerId: course.ownerId,
+    title: course.title,
+    state: course.state,
+    audioFileId: course.audioFileId,
+    durationSeconds: course.durationSeconds,
+    consentAcknowledged: course.consentAcknowledged,
+    createdAt: course.createdAt,
+    updatedAt: course.updatedAt,
+  };
+}
+
+function toStoredCourse(course: any): Course {
+  return {
+    id: course.id,
+    ownerId: course.ownerId,
+    title: course.title,
+    description: course.description,
+    color: course.color,
+    nextExamDate: course.nextExamDate,
+    lectureCount: course.lectureCount,
+    weakTopics: course.weakTopics,
+    progress: course.progress,
+    createdAt: course.createdAt,
+    updatedAt: course.updatedAt,
+  };
+}
+
+function toStoredCourseWithOwner(course: any): StoredCourse {
+  return {
+    id: course.id,
+    ownerId: course.ownerId,
+    title: course.title,
+    description: course.description,
+    color: course.color,
+    nextExamDate: course.nextExamDate,
+    lectureCount: course.lectureCount,
+    weakTopics: course.weakTopics,
+    progress: course.progress,
+    createdAt: course.createdAt,
+    updatedAt: course.updatedAt,
+  };
+}
+
+function toStoredLecture(course: any): StoredLecture {
+  return {
+    id: course.id,
+    courseId: course.courseId,
+    ownerId: course.ownerId,
+    title: course.title,
+    state: course.state,
+    audioFileId: course.audioFileId,
+    durationSeconds: course.durationSeconds,
+    consentAcknowledged: course.consentAcknowledged,
+    createdAt: course.createdAt,
+    updatedAt: course.updatedAt,
+  };
+}
+
+function toStoredFlashcard(card: any): Flashcard {
+  return {
+    id: card.id,
+    lectureId: card.lectureId,
+    courseId: card.courseId,
+    question: card.question,
+    answer: card.answer,
+  };
+}
+
+function toStoredDocument(document: any): Document {
+  return {
+    id: document.id,
+    ownerId: document.ownerId,
+    title: document.title,
+    fileUrl: document.fileUrl,
+    createdAt: document.createdAt,
+    pages: document.pages,
+    embeddings: document.embeddings,
+  };
+}
+
+function toStoredDocumentPage(page: any): DocumentPage {
+  return {
+    id: page.id,
+    documentId: page.documentId,
+    pageNumber: page.pageNumber,
+    text: page.text,
+  };
+}
+
+function toStoredEmbedding(embedding: any): Embedding {
+  return {
+    id: embedding.id,
+    documentId: embedding.documentId,
+    segmentId: embedding.segmentId,
+    vector: embedding.vector,
+    model: embedding.model,
+  };
+}
+
+function toStoredChatThread(chatThread: any): ChatThread {
+  return {
+    id: chatThread.id,
+    ownerId: chatThread.ownerId,
+    courseId: chatThread.courseId,
+    title: chatThread.title,
+    createdAt: chatThread.createdAt,
+    messages: chatThread.messages,
+  };
+}
+
+function toStoredChatMessage(message: any): ChatMessage {
+  return {
+    id: message.id,
+    threadId: message.threadId,
+    role: message.role,
+    content: message.content,
+    citations: message.citations,
+    createdAt: message.createdAt,
+  };
+}
+
+function toStoredProcessingJob(job: any): ProcessingJob {
+  return {
+    id: job.id,
+    jobType: job.jobType,
+    status: job.status,
+    retryCount: job.retryCount,
+    maxRetries: job.maxRetries,
+    errorCode: job.errorCode,
+    safeErrorMessage: job.safeErrorMessage,
+    diagnosticReference: job.diagnosticReference,
+    payload: job.payload,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
+  };
+}
+
+function toStoredUsageEvent(event: any): UsageEvent {
+  return {
+    id: event.id,
+    userId: event.userId,
+    kind: event.kind,
+    amount: event.amount,
+    recordedAt: event.recordedAt,
+  };
+}
+
+function toStoredAuditLog(log: any): AuditLog {
+  return {
+    id: log.id,
+    actorId: log.actorId,
+    actorType: log.actorType,
+    action: log.action,
+    resource: log.resource,
+    resourceId: log.resourceId,
+    requestId: log.requestId,
+    createdAt: log.createdAt,
+    actor: log.actor,
+  };
+}
+
+function toStoredConsent(consent: any): StoredConsent {
+  return {
+    id: consent.id,
+    userId: consent.userId,
+    purpose: consent.purpose,
+    acknowledged: consent.acknowledged,
+    version: consent.version,
+    createdAt: consent.createdAt,
+  };
+}
+
+function toStoredUpload(upload: any): StoredUpload {
+  return {
+    id: upload.id,
+    ownerId: upload.ownerId,
+    purpose: upload.purpose,
+    fileName: upload.fileName,
+    mimeType: upload.mimeType,
+    fileSize: upload.fileSize,
+    status: upload.status,
+    uploadUrl: upload.uploadUrl,
+    createdAt: upload.createdAt,
+  };
+}
+
+function toStoredConsent(consent: any): StoredConsent {
+  return {
+    id: consent.id,
+    userId: consent.userId,
+    purpose: consent.purpose,
+    acknowledged: consent.acknowledged,
+    version: consent.version,
+    createdAt: consent.createdAt,
+  };
+}
+
+function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
+  return {
+    id: exportRequest.id,
+    userId: exportRequest.userId,
+    status: exportRequest.status,
+    createdAt: exportRequest.createdAt,
+    completedAt: exportRequest.completedAt,
+  };
+}
+
+function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
+  return {
+    id: deletionRequest.id,
+    userId: deletionRequest.userId,
+    status: deletionRequest.status,
+    createdAt: deletionRequest.createdAt,
+    completedAt: deletionRequest.completedAt,
+  };
+}
+
+function toStoredUpload(upload: any): StoredUpload {
+  return {
+    id: upload.id,
+    ownerId: upload.ownerId,
+    purpose: upload.purpose,
+    fileName: upload.fileName,
+    mimeType: upload.mimeType,
+    fileSize: upload.fileSize,
+    status: upload.status,
+    uploadUrl: upload.uploadUrl,
+    createdAt: upload.createdAt,
+  };
+}
+
+function toStoredConsent(consent: any): StoredConsent {
+  return {
+    id: consent.id,
+    userId: consent.userId,
+    purpose: consent.purpose,
+    acknowledged: consent.acknowledged,
+    version: consent.version,
+    createdAt: consent.createdAt,
+  };
+}
+
+function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
+  return {
+    id: exportRequest.id,
+    userId: exportRequest.userId,
+    status: exportRequest.status,
+    createdAt: exportRequest.createdAt,
+    completedAt: exportRequest.completedAt,
+  };
+}
+
+function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
+  return {
+    id: deletionRequest.id,
+    userId: deletionRequest.userId,
+    status: deletionRequest.status,
+    createdAt: deletionRequest.createdAt,
+    completedAt: deletionRequest.completedAt,
+  };
+}
+
+function toStoredUpload(upload: any): StoredUpload {
+  return {
+    id: upload.id,
+    ownerId: upload.ownerId,
+    purpose: upload.purpose,
+    fileName: upload.fileName,
+    mimeType: upload.mimeType,
+    fileSize: upload.fileSize,
+    status: upload.status,
+    uploadUrl: upload.uploadUrl,
+    createdAt: upload.createdAt,
+  };
+}
+
+function toStoredConsent(consent: any): StoredConsent {
+  return {
+    id: consent.id,
+    userId: consent.userId,
+    purpose: consent.purpose,
+    acknowledged: consent.acknowledged,
+    version: consent.version,
+    createdAt: consent.createdAt,
+  };
+}
+
+function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
+  return {
+    id: exportRequest.id,
+    userId: exportRequest.userId,
+    status: exportRequest.status,
+    createdAt: exportRequest.createdAt,
+    completedAt: exportRequest.completedAt,
+  };
+}
+
+function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
+  return {
+    id: deletionRequest.id,
+    userId: deletionRequest.userId,
+    status: deletionRequest.status,
+    createdAt: deletionRequest.createdAt,
+    completedAt: deletionRequest.completedAt,
+  };
+}
+
+function toStoredUpload(upload: any): StoredUpload {
+  return {
+    id: upload.id,
+    ownerId: upload.ownerId,
+    purpose: upload.purpose,
+    fileName: upload.fileName,
+    mimeType: upload.mimeType,
+    fileSize: upload.fileSize,
+    status: upload.status,
+    uploadUrl: upload.uploadUrl,
+    createdAt: upload.createdAt,
+  };
+}
+
+function toStoredConsent(consent: any): StoredConsent {
+  return {
+    id: consent.id,
+    userId: consent.userId,
+    purpose: consent.purpose,
+    acknowledged: consent.acknowledged,
+    version: consent.version,
+    createdAt: consent.createdAt,
+  };
+}
+
+function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
+  return {
+    id: exportRequest.id,
+    userId: exportRequest.userId,
+    status: exportRequest.status,
+    createdAt: exportRequest.createdAt,
+    completedAt: exportRequest.completedAt,
+  };
+}
+
+function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
+  return {
+    id: deletionRequest.id,
+    userId: deletionRequest.userId,
+    status: deletionRequest.status,
+    createdAt: deletionRequest.createdAt,
+    completedAt: deletionRequest.completedAt,
+  };
+}
+
+function toStoredUpload(upload: any): StoredUpload {
+  return {
+    id: upload.id,
+    ownerId: upload.ownerId,
+    purpose: upload.purpose,
+    fileName: upload.fileName,
+    mimeType: upload.mimeType,
+    fileSize: upload.fileSize,
+    status: upload.status,
+    uploadUrl: upload.uploadUrl,
+    createdAt: upload.createdAt,
+  };
+}
+
+function toStoredConsent(consent: any): StoredConsent {
+  return {
+    id: consent.id,
+    userId: consent.userId,
+    purpose: consent.purpose,
+    acknowledged: consent.acknowledged,
+    version: consent.version,
+    createdAt: consent.createdAt,
+  };
+}
+
+function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
+  return {
+    id: exportRequest.id,
+    userId: exportRequest.userId,
+    status: exportRequest.status,
+    createdAt: exportRequest.createdAt,
+    completedAt: exportRequest.completedAt,
+  };
+}
+
+function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
+  return {
+    id: deletionRequest.id,
+    userId: deletionRequest.userId,
+    status: deletionRequest.status,
+    createdAt: deletionRequest.createdAt,
+    completedAt: deletionRequest.completedAt,
+  };
+}
