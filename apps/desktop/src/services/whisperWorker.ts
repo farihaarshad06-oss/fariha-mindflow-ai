@@ -373,7 +373,7 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
     let globalSegmentIndex = 0;
 
     // ── Process each chunk ─────────────────────────────────────────────────
-    for (const chunk of chunksToProcess) {
+    for (const [i, chunk] of chunksToProcess.entries()) {
       if (signal.aborted) break;
 
       const startOffsetSec = chunk.startOffsetMs / 1000;
