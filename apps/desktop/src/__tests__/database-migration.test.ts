@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+// @ts-expect-error runtime-supported built-in module
 import { DatabaseSync } from 'node:sqlite';
 
 vi.mock('electron', () => ({

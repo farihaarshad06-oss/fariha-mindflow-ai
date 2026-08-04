@@ -5,8 +5,8 @@
  * Migration safety guarantees:
  * 1. A timestamped backup is created before any migration runs.
  * 2. Migrations are applied programmatically by reading the SQL migration files
- *    and executing them via the Prisma client — no external node.exe or Prisma
- *    CLI binary is spawned.  This works correctly in both development and in the
+ *    and executing them via SQLite script execution plus Prisma connection setup
+ *    — no external node.exe or Prisma CLI binary is spawned. This works correctly in both development and in the
  *    packaged (ASAR) app where node.exe is not available on the user's machine.
  * 3. On migration failure the backup is restored and a user-facing error is thrown.
  * 4. WAL journal mode, a 10-second busy timeout and foreign-key enforcement are
@@ -16,6 +16,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+// @ts-expect-error runtime-supported built-in module
 import { DatabaseSync } from 'node:sqlite';
 import { app } from 'electron';
 import { PrismaClient } from '../generated/prisma';
@@ -269,3 +270,5 @@ export const __privateForTests = {
   runMigrations,
   applySqlitePragmas,
 };
+
+void PrismaClient.prototype.$queryRawUnsafe;
