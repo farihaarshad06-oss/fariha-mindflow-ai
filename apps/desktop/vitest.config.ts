@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/__tests__/**/*.test.ts'],
+    include: ['src/__tests__/**/*.test.{ts,js}'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
@@ -15,7 +15,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
-      'node:sqlite': 'node:sqlite',
     },
   },
 });

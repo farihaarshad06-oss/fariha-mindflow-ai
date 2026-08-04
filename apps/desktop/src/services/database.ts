@@ -270,5 +270,3 @@ export const __privateForTests = {
   runMigrations,
   applySqlitePragmas,
 };
-
-void PrismaClient.prototype.$queryRawUnsafe;
