@@ -356,7 +356,7 @@ export function registerAllHandlers(): void {
     wrap(async () => {
       const providers = await getPrisma().aiProvider.findMany({ orderBy: { createdAt: 'asc' } });
       // Never include secretKeyRef value to renderer — only id/displayName/enabled/etc.
-      return ok(providers.map(({ secretKeyRef: _omit, ...p }) => ({
+      return ok(providers.map(({ secretKeyRef: _secretKeyRef, ...p }) => ({
         ...p,
         hasSecret: SecretsService.hasSecret(`provider.${p.id}`),
       })));

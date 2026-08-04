@@ -374,8 +374,9 @@ export async function aiRequest<T extends ZodTypeAny>(
   // Load provider config
   const provider = await db.aiProvider.findUniqueOrThrow({ where: { id: opts.providerId } });
   let routing: ProviderConfig['modelRouting'] = {};
-  try { routing = JSON.parse(provider.modelRouting) as ProviderConfig['modelRouting']; } catch {}
-
+  try { routing = JSON.parse(provider.modelRouting) as ProviderConfig['modelRouting']; } catch {
+    // modelRouting may be empty string on a fresh provider row; default empty object is correct
+  }
   const model = resolveModel(routing, tier, provider.providerType);
   const systemPrompt = opts.systemPrompt ?? 'You are a helpful academic assistant.';
 
@@ -524,7 +525,9 @@ export async function testProviderConnection(providerId: string): Promise<{ ok: 
 
   const apiKey = SecretsService.getSecret(`provider.${providerId}`) ?? '';
   let routing: ProviderConfig['modelRouting'] = {};
-  try { routing = JSON.parse(provider.modelRouting) as ProviderConfig['modelRouting']; } catch {}
+  try { routing = JSON.parse(provider.modelRouting) as ProviderConfig['modelRouting']; } catch {
+    // modelRouting may be empty string on a fresh provider row; default empty object is correct
+  }
   const model = resolveModel(routing, 'economy', provider.providerType);
 
   const start = Date.now();
