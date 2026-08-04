@@ -5,7 +5,7 @@
 
 import { getPrisma } from './database';
 import log from 'electron-log/main';
-import type { TranscriptSegment } from '../generated/prisma';
+import type { TranscriptSegment } from '@prisma/client';
 
 export const TranscriptService = {
   async listForLecture(lectureId: string): Promise<TranscriptSegment[]> {

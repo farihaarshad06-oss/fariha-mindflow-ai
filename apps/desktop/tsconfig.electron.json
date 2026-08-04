@@ -14,5 +14,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist-electron", "dist-app", "src/__tests__", "src/generated"]
+  "exclude": ["node_modules", "dist-electron", "dist-app", "src/__tests__"]
 }

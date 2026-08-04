@@ -7,7 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { app } from 'electron';
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from '@prisma/client';
 import log from 'electron-log/main';
 
 let _prisma: PrismaClient | null = null;
