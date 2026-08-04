@@ -12,7 +12,6 @@ export class EnvironmentValidationService {
       ['JWT_ACCESS_SECRET', env.JWT_ACCESS_SECRET],
       ['JWT_REFRESH_SECRET', env.JWT_REFRESH_SECRET],
       ['DATABASE_URL', env.DATABASE_URL],
-      ['CORS_ORIGINS', env.CORS_ORIGINS.join(',')],
     ];
 
     const missing = requiredValues.filter(([, value]) => !value).map(([name]) => name);

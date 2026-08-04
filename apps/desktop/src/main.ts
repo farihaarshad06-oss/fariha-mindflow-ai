@@ -98,10 +98,29 @@ app.on('window-all-closed', () => {
 const userDataPath = app.getPath('userData');
 const audioDir = path.join(userDataPath, 'audio');
 
+function resolveAudioFilePath(fileName: string): string {
+  if (typeof fileName !== 'string') {
+    throw new Error('Invalid file name.');
+  }
+
+  const trimmed = fileName.trim();
+  if (!trimmed || path.basename(trimmed) !== trimmed || /[\\/]/.test(trimmed)) {
+    throw new Error('Invalid file name.');
+  }
+
+  const filePath = path.resolve(audioDir, trimmed);
+  const audioRoot = `${path.resolve(audioDir)}${path.sep}`;
+  if (!filePath.startsWith(audioRoot)) {
+    throw new Error('Invalid file path.');
+  }
+
+  return filePath;
+}
+
 ipcMain.handle('audio:save', async (_event, fileName: string, arrayBuffer: ArrayBuffer) => {
   try {
     fs.mkdirSync(audioDir, { recursive: true });
-    const filePath = path.join(audioDir, fileName);
+    const filePath = resolveAudioFilePath(fileName);
     fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
     return { success: true, filePath };
   } catch (err) {
@@ -126,7 +145,7 @@ ipcMain.handle('audio:list', async () => {
 
 ipcMain.handle('audio:delete', async (_event, fileName: string) => {
   try {
-    const filePath = path.join(audioDir, fileName);
+    const filePath = resolveAudioFilePath(fileName);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     return { success: true };
   } catch (err) {
