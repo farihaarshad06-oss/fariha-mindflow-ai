@@ -38,7 +38,7 @@ const mockAssistantReply =
 
 type ChatView = 'idle' | 'loading';
 
-export function ChatPage({ view = 'idle' }: { view?: ChatView }) {
+export function ChatPage({ view: _view = 'idle' }: { view?: ChatView }) {
   const { t } = useTranslation();
   const [courseId, setCourseId] = useState(mockCourses[0]?.id ?? '');
   const [messages, setMessages] = useState<Message[]>([]);

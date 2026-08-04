@@ -9,7 +9,6 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { RequestIdMiddleware } from './common/request-id.middleware';
 import { API_PREFIX, env } from './core/env';
 import { LoggerService } from './core/logger.service';
-import { API_VERSION } from '@mindflow/config';
 import { LoggerService } from './core/logger.service';
 import { EnvironmentValidationService } from './core/env-validation.service';
 

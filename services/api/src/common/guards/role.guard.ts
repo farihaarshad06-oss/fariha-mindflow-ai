@@ -1,7 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role } from '../../types';
-import { Request } from 'express';
+
+interface AuthenticatedUser {
+  roles?: string[];
+}
 
 @Injectable()
 export class RoleGuard implements CanActivate {
@@ -11,19 +13,19 @@ export class RoleGuard implements CanActivate {
     const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
     if (!requiredRoles) return true; // No role requirements
 
-    const request = context.switchToHttp().getRequest();
-    const user = request.user as any; // Authenticated user with roles
+    const request = context.switchToHttp().getRequest<{ user?: AuthenticatedUser }>();
+    const user = request.user;
 
     if (!user || !user.roles || user.roles.length === 0) {
       return false;
     }
 
-    return requiredRoles.some(role => user.roles.includes(role));
+    return requiredRoles.some(role => user.roles?.includes(role));
   }
 }
 
 export function Roles(...roles: Role[]) {
-  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+  return (_target: object, _key: string, descriptor: PropertyDescriptor) => {
     Reflect.defineMetadata('roles', roles, descriptor.value);
   };
 }

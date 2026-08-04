@@ -3,7 +3,14 @@
  * Uses an in-memory SQLite database via Prisma.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, assert, vi } from 'vitest';
+
+function expectDefined<T>(
+  value: T | null | undefined,
+  message = 'Expected value to be defined',
+): asserts value is T {
+  assert(value !== null && value !== undefined, message);
+}
 import { PrismaClient } from '../generated/prisma';
 import { JobQueue } from '../services/jobQueue';
 import { CourseService, LectureService } from '../services/courses';
@@ -55,12 +62,10 @@ vi.mock('../services/settings', () => ({
 
 // Needed for JobQueue which dynamically imports electron
 vi.mock('electron', () => ({
-  app: { getPath: (key: string) => os.tmpdir(), isPackaged: false },
+  app: { getPath: (_key: string) => os.tmpdir(), isPackaged: false },
   safeStorage: { isEncryptionAvailable: () => false, encryptString: () => Buffer.from(''), decryptString: () => '' },
   BrowserWindow: { getAllWindows: () => [] },
 }));
-
-import { vi } from 'vitest';
 
 beforeAll(async () => {
   dbPath = path.join(os.tmpdir(), `test-mindflow-${Date.now()}.db`);
@@ -123,7 +128,9 @@ describe('CourseService', () => {
 
     const all = await CourseService.list();
     expect(all.length).toBe(1);
-    expect(all[0]!.id).toBe(course.id);
+    const first = all[0];
+    expectDefined(first);
+    expect(first.id).toBe(course.id);
   });
 
   it('updates a course', async () => {
@@ -189,17 +196,19 @@ describe('JobQueue', () => {
   it('marks job as DONE after complete()', async () => {
     await JobQueue.enqueue({ jobType: 'CLEANUP', payload: {}, deduplicate: false });
     const job = await JobQueue.claimNext(['CLEANUP']);
-    await JobQueue.complete(job!.id);
-    const updated = await prisma.processingJob.findUnique({ where: { id: job!.id } });
+    expectDefined(job);
+    await JobQueue.complete(job.id);
+    const updated = await prisma.processingJob.findUnique({ where: { id: job.id } });
     expect(updated?.status).toBe('DONE');
   });
 
   it('retries a failed job with backoff', async () => {
     await JobQueue.enqueue({ jobType: 'SEARCH_INDEX', payload: {}, deduplicate: false, maxRetries: 3 });
     const job = await JobQueue.claimNext(['SEARCH_INDEX']);
-    await JobQueue.fail(job!.id, 'NETWORK_ERROR', 'Network unavailable');
+    expectDefined(job);
+    await JobQueue.fail(job.id, 'NETWORK_ERROR', 'Network unavailable');
 
-    const updated = await prisma.processingJob.findUnique({ where: { id: job!.id } });
+    const updated = await prisma.processingJob.findUnique({ where: { id: job.id } });
     expect(updated?.status).toBe('PENDING');
     expect(updated?.retryCount).toBe(1);
     expect(updated?.scheduledAfter.getTime()).toBeGreaterThan(Date.now());
@@ -208,34 +217,35 @@ describe('JobQueue', () => {
   it('permanently fails after maxRetries', async () => {
     await JobQueue.enqueue({ jobType: 'QUIZ_GENERATE', payload: {}, deduplicate: false, maxRetries: 2 });
     const job = await JobQueue.claimNext(['QUIZ_GENERATE']);
-    expect(job).not.toBeNull();
+    expectDefined(job);
 
     // First failure → retryCount becomes 1 → still < maxRetries(2) → PENDING with backoff
-    await JobQueue.fail(job!.id, 'ERR', 'fail 1');
-    const afterFail1 = await prisma.processingJob.findUnique({ where: { id: job!.id } });
+    await JobQueue.fail(job.id, 'ERR', 'fail 1');
+    const afterFail1 = await prisma.processingJob.findUnique({ where: { id: job.id } });
     expect(afterFail1?.status).toBe('PENDING');
     expect(afterFail1?.retryCount).toBe(1);
 
     // Override backoff so claimNext works immediately
     await prisma.processingJob.update({
-      where: { id: job!.id },
+      where: { id: job.id },
       data: { scheduledAfter: new Date(Date.now() - 1000) },
     });
 
     // Second failure → retryCount becomes 2 >= maxRetries(2) → FAILED
     const job2 = await JobQueue.claimNext(['QUIZ_GENERATE']);
-    expect(job2).not.toBeNull();
-    await JobQueue.fail(job2!.id, 'ERR', 'fail 2');
+    expectDefined(job2);
+    await JobQueue.fail(job2.id, 'ERR', 'fail 2');
 
-    const final = await prisma.processingJob.findUnique({ where: { id: job!.id } });
+    const final = await prisma.processingJob.findUnique({ where: { id: job.id } });
     expect(final?.status).toBe('FAILED');
   });
 
   it('cancels a job', async () => {
     await JobQueue.enqueue({ jobType: 'TRANSCRIBE', payload: {}, deduplicate: false });
     const job = await JobQueue.claimNext(['TRANSCRIBE']);
-    await JobQueue.cancel(job!.id);
-    const updated = await prisma.processingJob.findUnique({ where: { id: job!.id } });
+    expectDefined(job);
+    await JobQueue.cancel(job.id);
+    const updated = await prisma.processingJob.findUnique({ where: { id: job.id } });
     expect(updated?.status).toBe('CANCELLED');
   });
 
@@ -287,7 +297,8 @@ describe('TranscriptService', () => {
     ]);
 
     const [segment] = await TranscriptService.listForLecture(lecture.id);
-    const edited = await TranscriptService.editSegment(segment!.id, 'Corrected text');
+    expectDefined(segment);
+    const edited = await TranscriptService.editSegment(segment.id, 'Corrected text');
     expect(edited.editedText).toBe('Corrected text');
     expect(edited.text).toBe('Original text'); // original preserved
   });

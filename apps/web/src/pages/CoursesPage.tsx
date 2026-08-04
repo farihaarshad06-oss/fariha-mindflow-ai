@@ -5,7 +5,6 @@ import { Plus, BookOpen, Trash2 } from 'lucide-react';
 import {
   PageHeader,
   Card,
-  CardBody,
   Button,
   Badge,
   Progress,

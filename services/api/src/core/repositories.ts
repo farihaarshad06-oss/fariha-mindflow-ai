@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   Prisma,
   PrismaClient,
@@ -15,6 +16,18 @@ import type { AuditLog, ConsentRecord, Course, Lecture, ProcessingJob, UsageEven
 export type StoredUser = User & { passwordHash: string };
 export type StoredLecture = Lecture & { transcript?: string | null; consentAcknowledged: boolean };
 export type StoredConsent = ConsentRecord;
+
+export interface StoredUpload {
+  id: string;
+  ownerId: string;
+  purpose: 'LECTURE_AUDIO' | 'COURSE_DOCUMENT';
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  uploadUrl: string;
+  status: 'PENDING' | 'COMPLETED' | 'DELETED';
+  createdAt: string;
+}
 
 @Injectable()
 export class PrismaService extends PrismaClient {}
@@ -267,7 +280,27 @@ export class ConsentRepository {
 
 @Injectable()
 export class UploadRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly store = new Map<string, StoredUpload>();
+
+  create(input: Omit<StoredUpload, 'id' | 'status' | 'createdAt'>): StoredUpload {
+    const record: StoredUpload = {
+      ...input,
+      id: randomUUID(),
+      status: 'PENDING',
+      createdAt: new Date().toISOString(),
+    };
+    this.store.set(record.id, record);
+    return record;
+  }
+
+  findById(id: string): StoredUpload | undefined {
+    return this.store.get(id);
+  }
+
+  save(upload: StoredUpload): StoredUpload {
+    this.store.set(upload.id, upload);
+    return upload;
+  }
 }
 
 function toStoredUser(user: PrismaUser): StoredUser {

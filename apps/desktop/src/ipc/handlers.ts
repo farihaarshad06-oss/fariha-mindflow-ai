@@ -436,8 +436,10 @@ export function registerAllHandlers(): void {
         breakdown: events.reduce<Record<string, { tokens: number; costCents: number }>>((acc, e) => {
           const key = `${e.provider}/${e.model}`;
           if (!acc[key]) acc[key] = { tokens: 0, costCents: 0 };
-          acc[key]!.tokens += e.inputTokens + e.outputTokens;
-          acc[key]!.costCents += e.estimatedCostCents;
+          const entry = acc[key] ?? { tokens: 0, costCents: 0 };
+          entry.tokens += e.inputTokens + e.outputTokens;
+          entry.costCents += e.estimatedCostCents;
+          acc[key] = entry;
           return acc;
         }, {}),
       });

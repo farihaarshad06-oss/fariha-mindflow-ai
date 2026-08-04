@@ -234,7 +234,7 @@ export const JobQueue = {
     completedAt?: Date | null; createdAt: Date; updatedAt: Date;
   }): JobRecord {
     let payload: Record<string, unknown> = {};
-    try { payload = JSON.parse(job.payload) as Record<string, unknown>; } catch {}
+    try { payload = JSON.parse(job.payload) as Record<string, unknown>; } catch { /* invalid payload */ }
     return { ...job, payload };
   },
 };

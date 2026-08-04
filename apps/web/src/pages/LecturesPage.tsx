@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Mic, Plus } from 'lucide-react';
-import { PageHeader, Card, CardBody, Button, Badge, EmptyState, Progress } from '@mindflow/ui';
+import { PageHeader, Card, CardBody, Button, Badge, EmptyState } from '@mindflow/ui';
 import { mockLectures } from '../lib/mock-data';
 
 export function LecturesPage() {

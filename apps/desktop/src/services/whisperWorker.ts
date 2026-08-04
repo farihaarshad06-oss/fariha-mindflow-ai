@@ -93,14 +93,14 @@ function getFfmpegPath(): string | null {
       _ffmpegPath = ffmpegStatic;
       return _ffmpegPath;
     }
-  } catch {}
+  } catch { /* not available */ }
   // Try system ffmpeg
   for (const candidate of ['ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']) {
     try {
       execFileSync(candidate, ['-version'], { stdio: 'pipe', timeout: 3000 });
       _ffmpegPath = candidate;
       return _ffmpegPath;
-    } catch {}
+    } catch { /* not available */ }
   }
   _ffmpegPath = null;
   return null;
@@ -168,7 +168,7 @@ function getWhisperBin(): string | null {
       _whisperBin = pkg.WHISPER_CPP_BINARY;
       return _whisperBin;
     }
-  } catch {}
+  } catch { /* not available */ }
 
   // 3. System PATH (dev environment)
   for (const name of ['whisper-cli', 'whisper', 'main']) {
@@ -176,7 +176,7 @@ function getWhisperBin(): string | null {
       execFileSync(name, ['--help'], { stdio: 'pipe', timeout: 3000 });
       _whisperBin = name;
       return _whisperBin;
-    } catch {}
+    } catch { /* not available */ }
   }
 
   for (const c of candidates) {
@@ -213,17 +213,6 @@ async function runWhisper(opts: {
 
   const { wavPath, modelPath, language, signal, onProgress } = opts;
 
-  // Use JSON output format for structured segment data
-  const args = [
-    '-m', modelPath,
-    '-f', wavPath,
-    '-l', language === 'auto' ? 'auto' : language,
-    '--output-json',
-    '--print-progress',
-    '--no-timestamps', // we'll parse timestamps from JSON
-    '-nt',
-  ];
-
   // Re-add timestamps via JSON output flag
   const jsonArgs = [
     '-m', modelPath,
@@ -247,7 +236,7 @@ async function runWhisper(opts: {
       stderr += line.slice(-1000);
       // Parse progress from whisper.cpp output: "progress = XX%"
       const m = /progress\s*=\s*(\d+)%/i.exec(line);
-      if (m && onProgress) onProgress(parseInt(m[1]!, 10));
+      if (m && onProgress) onProgress(parseInt(m[1] ?? '0', 10));
     });
 
     proc.on('close', (code) => {
@@ -263,7 +252,7 @@ async function runWhisper(opts: {
         let parsed: { transcription?: Array<{ id: number; timestamps?: { from: string; to: string }; offsets?: { from: number; to: number }; text: string }> };
         if (fs.existsSync(jsonPath)) {
           parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf8')) as typeof parsed;
-          try { fs.unlinkSync(jsonPath); } catch {}
+          try { fs.unlinkSync(jsonPath); } catch { /* cleanup */ }
         } else {
           // Fallback: parse stdout as JSON
           parsed = JSON.parse(stdout || '{}') as typeof parsed;
@@ -291,7 +280,7 @@ function parseTimestamp(ts: string): number {
   // Format: HH:MM:SS,mmm
   const m = /(\d+):(\d+):(\d+)[,.](\d+)/.exec(ts);
   if (!m) return 0;
-  return parseInt(m[1]!, 10) * 3600 + parseInt(m[2]!, 10) * 60 + parseInt(m[3]!, 10) + parseInt(m[4]!, 10) / 1000;
+  return parseInt(m[1] ?? '0', 10) * 3600 + parseInt(m[2] ?? '0', 10) * 60 + parseInt(m[3] ?? '0', 10) + parseInt(m[4] ?? '0', 10) / 1000;
 }
 
 // ── Core job processing ────────────────────────────────────────────────────
@@ -384,10 +373,9 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
     let globalSegmentIndex = 0;
 
     // ── Process each chunk ─────────────────────────────────────────────────
-    for (let i = 0; i < chunksToProcess.length; i++) {
+    for (const chunk of chunksToProcess) {
       if (signal.aborted) break;
 
-      const chunk = chunksToProcess[i]!;
       const startOffsetSec = chunk.startOffsetMs / 1000;
 
       // Validate file path
@@ -439,7 +427,7 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
       });
 
       // Clean up WAV
-      try { if (fs.existsSync(tmpWav)) fs.unlinkSync(tmpWav); } catch {}
+      try { if (fs.existsSync(tmpWav)) fs.unlinkSync(tmpWav); } catch { /* cleanup */ }
       wavPath = null;
 
       if (signal.aborted) break;
@@ -476,7 +464,7 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
     }
   } catch (err) {
     // Clean up temp WAV
-    if (wavPath) { try { if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath); } catch {} }
+    if (wavPath) { try { if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath); } catch { /* cleanup */ } }
 
     const msg = err instanceof Error ? err.message : String(err);
     log.error(`[whisper] Job ${jobId} error:`, msg.slice(0, 200));

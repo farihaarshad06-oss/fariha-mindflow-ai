@@ -68,7 +68,7 @@ const COST_PER_MILLION: Record<string, { input: number; output: number }> = {
 
 function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
   const key = Object.keys(COST_PER_MILLION).find((k) => model.toLowerCase().includes(k)) ?? 'default';
-  const rate = COST_PER_MILLION[key]!;
+  const rate = COST_PER_MILLION[key] ?? { input: 100, output: 300 };
   return Math.ceil((inputTokens * rate.input + outputTokens * rate.output) / 1_000_000);
 }
 
@@ -451,7 +451,7 @@ export async function aiRequest<T extends ZodTypeAny>(
     try {
       // Try to extract JSON from the response
       const jsonMatch = /```json\s*([\s\S]*?)\s*```/.exec(rawContent) ?? /(\{[\s\S]*\}|\[[\s\S]*\])/.exec(rawContent);
-      const jsonStr = jsonMatch ? jsonMatch[1]! : rawContent;
+      const jsonStr = jsonMatch?.[1] ?? rawContent;
       const parsed = JSON.parse(jsonStr);
       data = opts.responseSchema.parse(parsed) as z.infer<T>;
     } catch {
@@ -473,7 +473,7 @@ export async function aiRequest<T extends ZodTypeAny>(
           throw new Error('Cannot repair: unsupported provider for repair');
         }
         const jsonMatch2 = /```json\s*([\s\S]*?)\s*```/.exec(repairContent) ?? /(\{[\s\S]*\}|\[[\s\S]*\])/.exec(repairContent);
-        const jsonStr2 = jsonMatch2 ? jsonMatch2[1]! : repairContent;
+        const jsonStr2 = jsonMatch2?.[1] ?? repairContent;
         data = opts.responseSchema.parse(JSON.parse(jsonStr2)) as z.infer<T>;
       } catch (repairErr) {
         throw new Error(`AI response failed schema validation after repair attempt: ${repairErr instanceof Error ? repairErr.message : String(repairErr)}`);

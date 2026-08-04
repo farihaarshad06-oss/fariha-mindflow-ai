@@ -1,6 +1,5 @@
 import { app, BrowserWindow, shell, dialog, protocol } from 'electron';
 import path from 'node:path';
-import fs from 'node:fs';
 import log from 'electron-log/main';
 import { initDatabase, closeDatabase } from './services/database';
 import { registerAllHandlers } from './ipc/handlers';

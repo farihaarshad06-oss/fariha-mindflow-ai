@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+
 import { PageHeader, Card, CardBody, Button, Badge, Progress, Alert, Spinner } from '@mindflow/ui';
 import { Download, Trash2, CheckCircle2, XCircle, Pause } from 'lucide-react';
 
@@ -20,7 +20,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function ModelManagerPage() {
-  const { t: _t } = useTranslation();
+
   const [models, setModels] = useState<WhisperModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<Record<string, { downloaded: number; total: number }>>({});

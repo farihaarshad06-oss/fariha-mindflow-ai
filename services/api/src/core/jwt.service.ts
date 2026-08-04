@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService as OriginalJwtService } from './jwt.service';
-import { Request } from 'express';
 
 @Injectable()
 export class JwtService {
@@ -26,17 +25,13 @@ export class JwtService {
     return this.originalJwtService.verifyRefresh(token);
   }
 
-  async verifyToken(token: string, requestId?: string): Promise<boolean> {
+  async verifyToken(token: string): Promise<boolean> {
     try {
-      const payload = this.verifyAccess(token);
-      const isExpired = this.isTokenExpired(token);
-      
-      if (isExpired) {
+      if (this.isTokenExpired(token)) {
         throw new Error('token expired');
       }
-      
       return true;
-    } catch (error) {
+    } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
   }

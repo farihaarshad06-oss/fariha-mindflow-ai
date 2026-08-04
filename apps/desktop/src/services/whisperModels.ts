@@ -162,7 +162,9 @@ export const WhisperModelManager = {
       const req = proto.get(model.downloadUrl, { headers }, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302) {
           // Follow redirect
-          const redirected = new URL(res.headers.location!, model.downloadUrl);
+          const location = res.headers.location;
+          if (!location) { reject(new Error('Redirect with no Location header')); return; }
+          const redirected = new URL(location, model.downloadUrl);
           https.get(redirected.toString(), { headers }, handleResponse);
           return;
         }
