@@ -33,6 +33,7 @@ const resolvedPrismaBin = fs.existsSync(localPrismaBin) ? localPrismaBin : prism
 execFileSync(resolvedPrismaBin, ['generate', '--schema=prisma/schema.prisma'], {
   cwd: __dirname,
   stdio: 'inherit',
+  shell: process.platform === 'win32',
 });
 console.log('Prisma generate complete.');
 
