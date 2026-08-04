@@ -6,11 +6,11 @@ import { UsageService, type UsageTotals } from '../core/usage.service';
 export class AdminUsageService {
   constructor(private readonly usage: UsageService) {}
 
-  totals(): UsageTotals {
+  async totals(): Promise<UsageTotals> {
     return this.usage.totals();
   }
 
-  events(): UsageEvent[] {
+  async events(): Promise<UsageEvent[]> {
     return this.usage.list();
   }
 }
