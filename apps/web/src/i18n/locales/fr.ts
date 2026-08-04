@@ -107,6 +107,13 @@ export const fr = {
       emptyAudio: 'Aucun audio capturé.',
       maxLength: 'Durée maximale atteinte.',
       uploadFailed: 'Envoi échoué.',
+      uploadAudio: 'Téléverser un fichier audio',
+      uploadAudioHint: 'Glisser-déposer un fichier audio ici, ou cliquer pour parcourir',
+      uploadAudioFormats: 'Formats pris en charge : MP3, WAV, M4A, MP4, WebM (max 500 Mo)',
+      fileTooBig: 'Fichier trop volumineux (max 500 Mo).',
+      fileTypeInvalid: 'Type de fichier non pris en charge.',
+      fileReady: 'Fichier prêt',
+      offlineMode: 'Mode hors connexion — données enregistrées localement',
     },
     lectureDetail: {
       title: 'Cours',

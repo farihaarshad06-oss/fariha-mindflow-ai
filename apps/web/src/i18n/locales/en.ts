@@ -107,6 +107,13 @@ export const en = {
       emptyAudio: 'No audio captured.',
       maxLength: 'Maximum recording length reached.',
       uploadFailed: 'Upload failed.',
+      uploadAudio: 'Upload audio file',
+      uploadAudioHint: 'Drag & drop an audio file here, or click to browse',
+      uploadAudioFormats: 'Supported formats: MP3, WAV, M4A, MP4, WebM (max 500 MB)',
+      fileTooBig: 'File is too large (max 500 MB).',
+      fileTypeInvalid: 'File type not supported.',
+      fileReady: 'File ready',
+      offlineMode: 'Offline mode — data saved locally',
     },
     lectureDetail: {
       title: 'Lecture',

@@ -1,0 +1,78 @@
+{
+  "name": "@mindflow/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fariha MindFlow AI — Desktop Application (Electron)",
+  "author": "Fariha MindFlow AI",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm --filter @mindflow/web dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "pnpm --filter @mindflow/web build && tsc -p tsconfig.electron.json && electron-builder",
+    "build:win": "pnpm build -- --win",
+    "build:mac": "pnpm build -- --mac",
+    "build:linux": "pnpm build -- --linux",
+    "typecheck": "tsc -p tsconfig.electron.json --noEmit",
+    "clean": "rimraf dist-electron dist-app"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "concurrently": "^9.0.1",
+    "electron": "^32.2.7",
+    "electron-builder": "^25.1.8",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "ai.mindflow.fariha",
+    "productName": "Fariha MindFlow AI",
+    "copyright": "Copyright © 2024 Fariha MindFlow AI",
+    "directories": {
+      "output": "dist-app",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "!node_modules"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64", "ia32"] }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.education"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.png",
+      "category": "Education"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Fariha MindFlow AI"
+    },
+    "publish": null
+  }
+}

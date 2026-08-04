@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Mic, Square, Pause, Play, AlertTriangle, CheckCircle2, UploadCloud } from 'lucide-react';
+import { Mic, Square, Pause, Play, AlertTriangle, CheckCircle2, UploadCloud, FolderOpen } from 'lucide-react';
 import {
   PageHeader,
   Card,
@@ -29,6 +29,8 @@ type RecorderError =
   | 'emptyAudio'
   | 'maxLength'
   | 'uploadFailed'
+  | 'fileTooBig'
+  | 'fileTypeInvalid'
   | null;
 
 const formatTime = (seconds: number) => {
@@ -41,6 +43,15 @@ const formatTime = (seconds: number) => {
   return `${m}:${s}`;
 };
 
+const ALLOWED_AUDIO_TYPES = new Set(FILE_LIMITS.allowedAudioMimeTypes as readonly string[]);
+const ALLOWED_AUDIO_EXT = new Set(FILE_LIMITS.allowedAudioExtensions as readonly string[]);
+
+function isAudioFile(file: File): boolean {
+  if (ALLOWED_AUDIO_TYPES.has(file.type)) return true;
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  return ALLOWED_AUDIO_EXT.has(ext);
+}
+
 export function RecorderPage() {
   const { t } = useTranslation();
   const [consent, setConsent] = useState(false);
@@ -51,12 +62,15 @@ export function RecorderPage() {
   const [waveform, setWaveform] = useState<number[]>(Array.from({ length: 24 }, () => 0.3));
   const [topics, setTopics] = useState<string[]>([]);
   const [importantTimes, setImportantTimes] = useState<number[]>([]);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const waveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const supported =
     typeof window !== 'undefined' && 'MediaRecorder' in window && !!navigator.mediaDevices?.getUserMedia;
@@ -154,6 +168,58 @@ export function RecorderPage() {
     }, 1200);
   }, []);
 
+  const processUploadedFile = useCallback(
+    (file: File) => {
+      if (!isAudioFile(file)) {
+        setError('fileTypeInvalid');
+        setStatus('error');
+        return;
+      }
+      if (file.size > FILE_LIMITS.maxAudioBytes) {
+        setError('fileTooBig');
+        setStatus('error');
+        return;
+      }
+      setUploadedFileName(file.name);
+      simulateTopics();
+      uploadAudio();
+    },
+    [uploadAudio],
+  );
+
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) processUploadedFile(file);
+      // Reset so same file can be re-selected
+      e.target.value = '';
+    },
+    [processUploadedFile],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) processUploadedFile(file);
+    },
+    [processUploadedFile],
+  );
+
   const pause = () => {
     mediaRecorderRef.current?.pause();
     stopTimer();
@@ -176,7 +242,10 @@ export function RecorderPage() {
     setSeconds(0);
     setTopics([]);
     setImportantTimes([]);
+    setUploadedFileName(null);
   };
+
+  const isIdle = status === 'idle' || status === 'error';
 
   const errorMessages: Record<Exclude<RecorderError, null>, string> = {
     permissionDenied: t('recorder.permissionDenied'),
@@ -186,6 +255,8 @@ export function RecorderPage() {
     emptyAudio: t('recorder.emptyAudio'),
     maxLength: t('recorder.maxLength'),
     uploadFailed: t('recorder.uploadFailed'),
+    fileTooBig: t('recorder.fileTooBig'),
+    fileTypeInvalid: t('recorder.fileTypeInvalid'),
   };
 
   return (
@@ -300,6 +371,66 @@ export function RecorderPage() {
           )}
         </CardBody>
       </Card>
+
+      {/* Audio file upload section */}
+      {isIdle && (
+        <Card className="mt-4">
+          <CardBody>
+            <h2 className="mb-3 font-semibold text-slate-900">
+              <UploadCloud className="me-2 inline h-5 w-5 text-brand-500" aria-hidden="true" />
+              {t('recorder.uploadAudio')}
+            </h2>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={[...FILE_LIMITS.allowedAudioMimeTypes, ...FILE_LIMITS.allowedAudioExtensions.map((e) => `.${e}`)].join(',')}
+              className="sr-only"
+              aria-label={t('recorder.uploadAudio')}
+              onChange={handleFileInputChange}
+              data-testid="audio-file-input"
+            />
+
+            {/* Drag-and-drop zone */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={t('recorder.uploadAudioHint')}
+              className={`flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed p-8 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+                isDragOver
+                  ? 'border-brand-500 bg-brand-50'
+                  : 'border-slate-300 bg-slate-50 hover:border-brand-400 hover:bg-brand-50'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
+              }}
+            >
+              <FolderOpen
+                className={`h-10 w-10 ${isDragOver ? 'text-brand-500' : 'text-slate-400'}`}
+                aria-hidden="true"
+              />
+              <p className="text-sm text-slate-600">{t('recorder.uploadAudioHint')}</p>
+              <p className="text-xs text-slate-400">{t('recorder.uploadAudioFormats')}</p>
+              <Button variant="secondary" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                <FolderOpen className="me-1 h-4 w-4" aria-hidden="true" /> {t('recorder.uploadAudio')}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Uploaded file name confirmation */}
+      {status === 'uploaded' && uploadedFileName && (
+        <Alert tone="success" className="mt-4">
+          <CheckCircle2 className="me-2 inline h-4 w-4" aria-hidden="true" />
+          {t('recorder.fileReady')}: <strong>{uploadedFileName}</strong>
+        </Alert>
+      )}
 
       {error && (
         <Alert tone="danger" className="mt-4">
