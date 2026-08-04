@@ -60,7 +60,7 @@ describe('Prisma smoke test', () => {
     // A simple raw query — must work on a fresh (empty/unmigrated) DB
     const result = await prisma.$queryRawUnsafe<{ val: number }[]>('SELECT 1 AS val');
     expect(result).toHaveLength(1);
-    expect(result[0]?.val).toBe(1);
+    expect(Number(result[0]?.val)).toBe(1);
   });
 
   it('disconnects cleanly', async () => {
