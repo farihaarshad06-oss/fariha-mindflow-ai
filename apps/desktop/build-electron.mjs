@@ -77,13 +77,36 @@ await build({
 // ── 3. Copy Prisma schema.prisma into dist-electron ───────────────────────
 // The generated index.js resolves schema.prisma via path.join(__dirname, 'schema.prisma').
 // After esbuild bundles it inline, __dirname is dist-electron/, so we copy it there.
-const generatedSchemaPath = path.join(__dirname, 'src', 'generated', 'prisma', 'schema.prisma');
+const generatedPrismaDir = path.join(__dirname, 'src', 'generated', 'prisma');
+const generatedSchemaPath = path.join(generatedPrismaDir, 'schema.prisma');
 const outSchemaPath = path.join(outdir, 'schema.prisma');
 if (fs.existsSync(generatedSchemaPath)) {
   fs.copyFileSync(generatedSchemaPath, outSchemaPath);
   console.log('Copied schema.prisma to dist-electron/');
 } else {
   console.warn('WARNING: src/generated/prisma/schema.prisma not found — run prisma generate first');
+}
+
+// ── 4. Copy Prisma native query-engine .node files into dist-electron ─────
+// esbuild's loader:{'.node':'copy'} only triggers for statically-imported .node
+// files; the Prisma generated client loads them via dynamic require() at runtime,
+// so esbuild never sees them.  We copy them explicitly here so they are present
+// in dist-electron/ for both the verify-prisma-package check and electron-builder's
+// asarUnpack rule (which unpacks dist-electron/*.node at runtime).
+if (fs.existsSync(generatedPrismaDir)) {
+  const nodeFiles = fs.readdirSync(generatedPrismaDir).filter(f => f.endsWith('.node'));
+  if (nodeFiles.length > 0) {
+    for (const nodeFile of nodeFiles) {
+      const src = path.join(generatedPrismaDir, nodeFile);
+      const dest = path.join(outdir, nodeFile);
+      fs.copyFileSync(src, dest);
+      console.log(`Copied native engine ${nodeFile} to dist-electron/`);
+    }
+  } else {
+    console.warn('WARNING: no .node engine files found in src/generated/prisma — Prisma may not work at runtime');
+  }
+} else {
+  console.warn('WARNING: src/generated/prisma directory not found — run prisma generate first');
 }
 
 console.log('Electron main and preload bundled successfully.');
