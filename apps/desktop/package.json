@@ -57,6 +57,7 @@
       "node_modules/.prisma/**/*",
       "node_modules/@prisma/**/*",
       "node_modules/prisma/**/*",
+      "node_modules/electron-log/**/*",
       "node_modules/ffmpeg-static/**/*",
       "node_modules/nodejs-whisper/**/*"
     ],
