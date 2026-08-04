@@ -7,6 +7,7 @@ import { registerAllHandlers } from './ipc/handlers';
 import { RecordingService } from './services/recording';
 import { JobQueue } from './services/jobQueue';
 import { WhisperModelManager } from './services/whisperModels';
+import { WhisperWorker } from './services/whisperWorker';
 import { SettingsService } from './services/settings';
 
 // ── Logging ────────────────────────────────────────────────────────────────
@@ -101,6 +102,9 @@ app.whenReady().then(async () => {
     await JobQueue.recoverStalledJobs();
     await WhisperModelManager.ensureDefaults();
 
+    log.info('[main] Starting Whisper worker...');
+    WhisperWorker.start();
+
     log.info('[main] Applying settings...');
     await SettingsService.get(); // ensure defaults exist
 
@@ -130,6 +134,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   log.info('[main] Shutting down...');
+  WhisperWorker.stop();
   await closeDatabase();
 });
 
