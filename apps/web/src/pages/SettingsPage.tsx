@@ -61,7 +61,15 @@ export function SettingsPage() {
 
   const saveApiKey = async () => {
     if (!apiKey.trim() || !isDesktop || !window.electronAPI) return;
-    const res = await window.electronAPI.setSecret(`provider.key.${apiKeyProvider}`, apiKey);
+    const providersRes = await window.electronAPI.listProviders();
+    const providers = providersRes.ok && Array.isArray(providersRes.data) ? providersRes.data as Array<{ id: string; providerType: string }> : [];
+    const matchingProvider = providers.find((provider) => provider.providerType === apiKeyProvider);
+    if (!matchingProvider) {
+      setKeyStatus('error');
+      setTimeout(() => setKeyStatus('idle'), 3000);
+      return;
+    }
+    const res = await window.electronAPI.setSecret(`provider.${matchingProvider.id}`, apiKey);
     if (res.ok) {
       setKeyStatus('saved');
       setApiKey('');

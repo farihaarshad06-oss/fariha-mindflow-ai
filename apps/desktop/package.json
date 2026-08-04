@@ -53,7 +53,12 @@
     },
     "files": [
       "dist-electron/**/*",
-      "!node_modules"
+      "prisma/**/*",
+      "node_modules/.prisma/**/*",
+      "node_modules/@prisma/**/*",
+      "node_modules/prisma/**/*",
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/nodejs-whisper/**/*"
     ],
     "extraResources": [
       {
@@ -61,6 +66,14 @@
         "to": "web",
         "filter": [
           "**/*"
+        ]
+      },
+      {
+        "from": "prisma",
+        "to": "prisma",
+        "filter": [
+          "schema.prisma",
+          "migrations/**/*"
         ]
       }
     ],

@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { app } from 'electron';
 import { PrismaClient } from '../generated/prisma';
 import log from 'electron-log/main';
@@ -54,47 +55,45 @@ export async function closeDatabase(): Promise<void> {
 }
 
 async function runMigrations(dbPath: string): Promise<void> {
-  // Prisma migrate deploy applies migrations from the embedded migrations folder.
-  // In development: migrations live at prisma/migrations/
-  // In production (packaged): migrations are in resources/prisma/migrations/
-  const { execSync } = await import('node:child_process');
-  const { app: electronApp } = await import('electron');
-
-  const schemaPath = electronApp.isPackaged
+  const schemaPath = app.isPackaged
     ? path.join(process.resourcesPath, 'prisma', 'schema.prisma')
     : path.join(__dirname, '..', '..', 'prisma', 'schema.prisma');
+  const prismaBin = resolvePrismaCli();
 
   try {
-    execSync(
-      `npx prisma migrate deploy --schema="${schemaPath}"`,
-      {
-        env: {
-          ...process.env,
-          DESKTOP_DATABASE_URL: `file:${dbPath}`,
-        },
-        timeout: 30_000,
-        stdio: 'pipe',
-      }
-    );
+    execFileSync(prismaBin, ['migrate', 'deploy', '--schema', schemaPath], {
+      env: {
+        ...process.env,
+        DESKTOP_DATABASE_URL: `file:${dbPath}`,
+      },
+      timeout: 30_000,
+      stdio: 'pipe',
+    });
     log.info('[db] Migrations applied');
   } catch (err: unknown) {
-    // If migration fails, log the error and try to continue with the existing schema.
-    // This prevents crashes on first run if migrations directory is not yet present.
     const msg = err instanceof Error ? err.message : String(err);
     log.warn('[db] Migration warning (will attempt db push fallback):', msg);
     try {
-      execSync(
-        `npx prisma db push --schema="${schemaPath}" --skip-generate --accept-data-loss`,
-        {
-          env: { ...process.env, DESKTOP_DATABASE_URL: `file:${dbPath}` },
-          timeout: 30_000,
-          stdio: 'pipe',
-        }
-      );
+      execFileSync(prismaBin, ['db', 'push', '--schema', schemaPath, '--skip-generate', '--accept-data-loss'], {
+        env: { ...process.env, DESKTOP_DATABASE_URL: `file:${dbPath}` },
+        timeout: 30_000,
+        stdio: 'pipe',
+      });
       log.info('[db] db push fallback succeeded');
     } catch (pushErr: unknown) {
       log.error('[db] db push also failed:', pushErr instanceof Error ? pushErr.message : String(pushErr));
-      // Continue — Prisma may still work if schema already exists
     }
   }
+}
+
+function resolvePrismaCli(): string {
+  const localBin = path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'prisma.cmd' : 'prisma');
+  if (fs.existsSync(localBin)) {
+    return localBin;
+  }
+  const packagedCli = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '.bin', process.platform === 'win32' ? 'prisma.cmd' : 'prisma');
+  if (fs.existsSync(packagedCli)) {
+    return packagedCli;
+  }
+  throw new Error('Prisma CLI not found for desktop migrations');
 }
