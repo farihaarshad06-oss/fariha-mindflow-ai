@@ -99,6 +99,21 @@ export const IPC = {
   BACKUP_LIST: 'backup:list',
   EXPORT_DATA: 'export:data',
   DIAGNOSTICS_GET: 'diagnostics:get',
+
+  // Whisper transcription trigger
+  WHISPER_TRANSCRIBE_NOW: 'whisper:transcribeNow',
+
+  // Flashcard generation
+  FLASHCARD_GENERATE: 'flashcard:generate',
+
+  // Quiz generation
+  QUIZ_GENERATE: 'quiz:generate',
+
+  // Study plan
+  STUDY_PLAN_GET: 'studyplan:get',
+
+  // Weakness analysis
+  WEAKNESS_ANALYZE: 'weakness:analyze',
 } as const;
 
 // ── Zod schemas for IPC payloads ───────────────────────────────────────────

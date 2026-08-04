@@ -35,7 +35,11 @@ import { RecordingService } from '../services/recording';
 import { CourseService, LectureService } from '../services/courses';
 import { TranscriptService } from '../services/transcript';
 import { WhisperModelManager } from '../services/whisperModels';
+import { WhisperWorker } from '../services/whisperWorker';
 import { JobQueue } from '../services/jobQueue';
+import { testProviderConnection } from '../services/aiProviders';
+import { generateSummary, generateFlashcards, groundedChat, generateWeeklyQuiz, generateStudyPlan, analyzeWeaknesses } from '../services/learning';
+import { createBackup, previewRestore, restoreBackup, exportTranscript, exportFlashcards, exportFullData, exportDiagnostics } from '../services/backup';
 import { getPrisma } from '../services/database';
 import { app } from 'electron';
 import path from 'node:path';
@@ -495,38 +499,18 @@ export function registerAllHandlers(): void {
       // Save user message
       await db.chatMessage.create({ data: { courseId, role: 'user', content: message } });
 
-      // FTS5 retrieval for grounded answer
-      const results = await TranscriptService.search(message, { courseId: courseId ?? undefined, limit: 5 });
-
-      if (results.length === 0) {
-        const reply = await db.chatMessage.create({
-          data: {
-            courseId,
-            role: 'assistant',
-            content: 'I could not find relevant transcript content to answer this question. Please ensure lectures have been transcribed.',
-            citationIds: '[]',
-          },
-        });
-        return ok({ message: reply, sources: [] });
-      }
-
-      // Build grounded context (extractive — no full transcript sent to AI by default)
-      const context = results.map((r, i) => `[${i + 1}] ${r.text}`).join('\n\n');
-
-      // For local-only mode, return an extractive summary.
-      // When an AI provider is configured and limits allow, this would call the provider.
-      const content = `Based on your lecture notes:\n\n${context}\n\n(Sources: ${results.map((r) => r.segmentId).join(', ')})`;
-      const citationIds = results.map((r) => r.segmentId);
+      // Real grounded chat with FTS5 retrieval
+      const result = await groundedChat({ courseId: courseId ?? undefined, message });
 
       const reply = await db.chatMessage.create({
         data: {
           courseId,
           role: 'assistant',
-          content,
-          citationIds: JSON.stringify(citationIds),
+          content: result.answer,
+          citationIds: JSON.stringify(result.citationIds),
         },
       });
-      return ok({ message: reply, sources: results });
+      return ok({ message: reply, sources: result.sources, fromAi: result.fromAi });
     })
   );
 
@@ -591,6 +575,119 @@ export function registerAllHandlers(): void {
     }))
   );
 
+  ipcMain.handle(IPC.BACKUP_CREATE, (_e, raw: unknown) =>
+    wrap(async () => {
+      const opts = (raw as { includeAudio?: boolean; destinationPath?: string }) ?? {};
+      return ok(await createBackup(opts));
+    })
+  );
+
+  ipcMain.handle(IPC.BACKUP_LIST, () =>
+    wrap(async () => {
+      const db = getPrisma();
+      return ok(await db.backupRecord.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }));
+    })
+  );
+
+  ipcMain.handle(IPC.BACKUP_RESTORE, (_e, raw: unknown) =>
+    wrap<unknown>(async () => {
+      const { backupPath, previewOnly = false } = (raw as { backupPath?: string; previewOnly?: boolean }) ?? {};
+      if (!backupPath || typeof backupPath !== 'string') return err('Invalid backupPath');
+      if (previewOnly) {
+        return ok(await previewRestore(backupPath));
+      }
+      await restoreBackup(backupPath);
+      return ok({ restored: true });
+    })
+  );
+
+  ipcMain.handle(IPC.EXPORT_DATA, (_e, raw: unknown) =>
+    wrap(async () => {
+      const { type, id, format = 'json' } = (raw as { type?: string; id?: string; format?: string }) ?? {};
+      if (type === 'transcript' && id) {
+        const fmt = (format === 'md' ? 'md' : 'txt') as 'txt' | 'md';
+        return ok({ filePath: await exportTranscript(id, fmt) });
+      }
+      if (type === 'flashcards' && id) {
+        const fmt = (format === 'anki' ? 'anki' : 'csv') as 'csv' | 'anki';
+        return ok({ filePath: await exportFlashcards(id, fmt) });
+      }
+      if (type === 'diagnostics') {
+        return ok({ filePath: await exportDiagnostics() });
+      }
+      // Default: full data export
+      return ok({ filePath: await exportFullData(true) });
+    })
+  );
+
+  // ── Summary ────────────────────────────────────────────────────────────
+  ipcMain.handle(IPC.SUMMARY_GET, (_e, lectureId: unknown) =>
+    wrap(async () => {
+      if (typeof lectureId !== 'string') return err('Invalid lectureId');
+      const db = getPrisma();
+      // Try to get existing
+      const existing = await db.lectureSummary.findUnique({ where: { lectureId } });
+      if (existing) return ok(existing);
+      // Generate
+      const summary = await generateSummary(lectureId);
+      return ok(summary);
+    })
+  );
+
+  // ── Provider test ──────────────────────────────────────────────────────
+  ipcMain.handle(IPC.PROVIDER_TEST, (_e, providerId: unknown) =>
+    wrap(async () => {
+      if (typeof providerId !== 'string') return err('Invalid providerId');
+      return ok(await testProviderConnection(providerId));
+    })
+  );
+
+  // ── Whisper transcription trigger ──────────────────────────────────────
+  ipcMain.handle('whisper:transcribeNow', (_e, raw: unknown) =>
+    wrap(async () => {
+      const { lectureId, modelId, language } = (raw as { lectureId?: string; modelId?: string; language?: string }) ?? {};
+      if (!lectureId || typeof lectureId !== 'string') return err('Invalid lectureId');
+      const jobId = await WhisperWorker.enqueueTranscription(lectureId, { modelId, language });
+      return ok({ jobId });
+    })
+  );
+
+  // ── Flashcard generation ───────────────────────────────────────────────
+  ipcMain.handle('flashcard:generate', (_e, raw: unknown) =>
+    wrap(async () => {
+      const { lectureId, courseId } = (raw as { lectureId?: string; courseId?: string }) ?? {};
+      if (!lectureId || typeof lectureId !== 'string') return err('Invalid lectureId');
+      return ok(await generateFlashcards(lectureId, courseId));
+    })
+  );
+
+  // ── Quiz generation ────────────────────────────────────────────────────
+  ipcMain.handle('quiz:generate', (_e, raw: unknown) =>
+    wrap(async () => {
+      const { courseId, weekStart } = (raw as { courseId?: string; weekStart?: string }) ?? {};
+      if (!courseId || typeof courseId !== 'string') return err('Invalid courseId');
+      const week = weekStart ? new Date(weekStart) : getLastSunday();
+      const quizId = await generateWeeklyQuiz(courseId, week);
+      return ok({ quizId });
+    })
+  );
+
+  // ── Study plan ─────────────────────────────────────────────────────────
+  ipcMain.handle('studyplan:get', (_e, courseId: unknown) =>
+    wrap(async () => {
+      if (typeof courseId !== 'string') return err('Invalid courseId');
+      return ok(await generateStudyPlan(courseId));
+    })
+  );
+
+  // ── Weakness analysis ──────────────────────────────────────────────────
+  ipcMain.handle('weakness:analyze', (_e, courseId: unknown) =>
+    wrap(async () => {
+      if (typeof courseId !== 'string') return err('Invalid courseId');
+      return ok(await analyzeWeaknesses(courseId));
+    })
+  );
+
   log.info('[ipc] All handlers registered');
 }
 
@@ -611,4 +708,11 @@ function computeSm2(
   else if (reps === 1) newInterval = 6;
   else newInterval = Math.round(interval * newEf);
   return { easeFactor: newEf, intervalDays: newInterval, repetitions: reps + 1 };
+}
+
+function getLastSunday(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - d.getDay());
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
