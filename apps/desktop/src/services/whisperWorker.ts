@@ -526,7 +526,9 @@ export const WhisperWorker = {
     if (workerRunning) return;
     workerRunning = true;
     log.info('[whisper] Worker started');
-    void tick();
+    // Schedule the first tick via setTimeout so that stop() can cancel it
+    // before any Prisma query is issued — this prevents open-handle leaks in tests.
+    workerTimer = setTimeout(() => { void tick(); }, POLL_INTERVAL_MS);
   },
 
   stop(): void {
