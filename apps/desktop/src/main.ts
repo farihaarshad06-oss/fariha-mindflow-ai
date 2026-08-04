@@ -16,6 +16,8 @@ log.transports.console.level = 'debug';
 
 // Redact potential secrets from logs
 log.transports.file.transforms.push((msg) => {
+  // msg.data may not be an array in all electron-log versions/contexts
+  if (!Array.isArray(msg.data)) return msg;
   const parts = msg.data.map((d: unknown) => {
     if (typeof d !== 'string') return d;
     return d.replace(/Bearer\s+\S+/gi, '******')

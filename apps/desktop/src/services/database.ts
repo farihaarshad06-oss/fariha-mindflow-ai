@@ -80,10 +80,14 @@ async function runMigrations(dbPath: string): Promise<void> {
   log.info('[db] Pre-migration backup:', backupPath ?? 'none (fresh database)');
 
   try {
+    // Both DESKTOP_DATABASE_URL (used by the schema's datasource env()) and
+    // DATABASE_URL (Prisma CLI fallback) must point at the writable db file.
+    const dbUrl = `file:${dbPath}`;
     execFileSync(prismaCliArgs[0], [...prismaCliArgs.slice(1), 'migrate', 'deploy', '--schema', schemaPath], {
       env: {
         ...process.env,
-        DESKTOP_DATABASE_URL: `file:${dbPath}`,
+        DESKTOP_DATABASE_URL: dbUrl,
+        DATABASE_URL: dbUrl,
       },
       timeout: 60_000,
       stdio: 'pipe',
@@ -158,14 +162,17 @@ async function applySqlitePragmas(prisma: PrismaClient): Promise<void> {
  * Resolves the Prisma CLI for running `migrate deploy` at runtime.
  *
  * In development: uses the local node_modules/.bin/prisma binary.
- * In the packaged app: the `prisma` npm package is included in the asar (under
- * node_modules/prisma).  We invoke it via `node prisma/build/index.js` because
- * the .bin symlinks are not available inside an asar archive.
+ *
+ * In the packaged app: `node_modules/prisma` is listed in electron-builder's
+ * `asarUnpack` so it lands in `app.asar.unpacked/node_modules/prisma` — a real
+ * directory on disk that can be executed with the system Node binary (the
+ * `node` found next to `process.execPath`, NOT `process.execPath` itself which
+ * is the Electron/app EXE and must never be used to spawn a sub-process).
  *
  * Returns [executable, ...leadingArgs] so the caller can prepend them.
  */
-function resolvePrismaCli(): string[] {
-  // Development: local .bin symlink
+export function resolvePrismaCli(): string[] {
+  // Development: local .bin symlink (works on all platforms in dev mode)
   const binName = process.platform === 'win32' ? 'prisma.cmd' : 'prisma';
   const localBin = path.join(
     process.cwd(),
@@ -175,16 +182,30 @@ function resolvePrismaCli(): string[] {
   );
   if (fs.existsSync(localBin)) return [localBin];
 
-  // Packaged app: call the prisma JS entry via node (works inside asar)
-  const asarPrismaJs = path.join(
+  // Packaged app: prisma is unpacked from app.asar into app.asar.unpacked.
+  // We need a real Node binary — resolve it from the directory that contains
+  // the Electron executable.  On Windows the system node.exe may not be on
+  // PATH inside an installed app, so we look next to process.execPath first.
+  const unpackedPrismaJs = path.join(
     process.resourcesPath,
-    'app.asar',
+    'app.asar.unpacked',
     'node_modules',
     'prisma',
     'build',
     'index.js',
   );
-  if (fs.existsSync(asarPrismaJs)) return [process.execPath, asarPrismaJs];
 
-  throw new Error('Prisma CLI not found for desktop migrations');
+  if (fs.existsSync(unpackedPrismaJs)) {
+    // Locate a node binary: prefer one next to the Electron executable, then
+    // fall back to whatever is on PATH.
+    const nodeExeName = process.platform === 'win32' ? 'node.exe' : 'node';
+    const nodeBesideExe = path.join(path.dirname(process.execPath), nodeExeName);
+    const nodeExe = fs.existsSync(nodeBesideExe) ? nodeBesideExe : nodeExeName;
+    return [nodeExe, unpackedPrismaJs];
+  }
+
+  throw new Error(
+    'Prisma CLI not found. ' +
+    `Expected unpacked path: ${path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'prisma', 'build', 'index.js')}`,
+  );
 }

@@ -64,7 +64,10 @@
       "node_modules/nodejs-whisper/**/*"
     ],
     "asarUnpack": [
-      "dist-electron/*.node"
+      "dist-electron/*.node",
+      "node_modules/prisma/**/*",
+      "node_modules/@prisma/client/**/*",
+      "node_modules/@prisma/engines/**/*"
     ],
     "extraResources": [
       {
