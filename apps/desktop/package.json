@@ -16,18 +16,30 @@
     "build:mac": "pnpm build -- --mac",
     "build:linux": "pnpm build -- --linux",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint \"src/**/*.ts\"",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
+    "prisma:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
     "clean": "rimraf dist-electron dist-app"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "@prisma/client": "^5.20.0",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.3.9",
+    "prisma": "^5.20.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.16.10",
+    "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^9.0.1",
     "electron": "^39.8.1",
     "electron-builder": "^25.1.8",
     "rimraf": "^6.0.1",
     "typescript": "^5.6.3",
+    "vitest": "^2.1.1",
     "wait-on": "^8.0.1"
   },
   "build": {

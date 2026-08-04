@@ -9,8 +9,10 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist-electron", "dist-app"]
+  "exclude": ["node_modules", "dist-electron", "dist-app", "src/__tests__", "src/generated"]
 }

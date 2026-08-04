@@ -14,6 +14,7 @@ import { ChatPage } from './pages/ChatPage';
 import { StudyPlanPage } from './pages/StudyPlanPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { ModelManagerPage } from './pages/ModelManagerPage';
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/study-plan" element={<StudyPlanPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/models" element={<ModelManagerPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
