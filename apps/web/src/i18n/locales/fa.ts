@@ -107,6 +107,13 @@ export const fa = {
       emptyAudio: 'صوتی ضبط نشد.',
       maxLength: 'حداکثر زمان ضبط رسید.',
       uploadFailed: 'بارگذاری ناموفق بود.',
+      uploadAudio: 'بارگذاری فایل صوتی',
+      uploadAudioHint: 'فایل صوتی را اینجا بکشید یا برای انتخاب کلیک کنید',
+      uploadAudioFormats: 'فرمت‌های پشتیبانی‌شده: MP3، WAV، M4A، MP4، WebM (حداکثر ۵۰۰ مگابایت)',
+      fileTooBig: 'فایل خیلی بزرگ است (حداکثر ۵۰۰ مگابایت).',
+      fileTypeInvalid: 'نوع فایل پشتیبانی نمی‌شود.',
+      fileReady: 'فایل آماده است',
+      offlineMode: 'حالت آفلاین — داده‌ها به صورت محلی ذخیره شدند',
     },
     lectureDetail: {
       title: 'سخنرانی',

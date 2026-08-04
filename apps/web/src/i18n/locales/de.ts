@@ -107,6 +107,13 @@ export const de = {
       emptyAudio: 'Keine Audiodaten aufgenommen.',
       maxLength: 'Maximale Aufnahmelänge erreicht.',
       uploadFailed: 'Upload fehlgeschlagen.',
+      uploadAudio: 'Audiodatei hochladen',
+      uploadAudioHint: 'Audiodatei hier ablegen oder klicken zum Durchsuchen',
+      uploadAudioFormats: 'Unterstützte Formate: MP3, WAV, M4A, MP4, WebM (max 500 MB)',
+      fileTooBig: 'Datei zu groß (max 500 MB).',
+      fileTypeInvalid: 'Dateityp nicht unterstützt.',
+      fileReady: 'Datei bereit',
+      offlineMode: 'Offline-Modus — Daten lokal gespeichert',
     },
     lectureDetail: {
       title: 'Vorlesung',
