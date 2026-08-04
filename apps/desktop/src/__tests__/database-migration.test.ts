@@ -7,9 +7,9 @@
  * - Failed migration restores the backup and throws a user-facing error
  * - SQLite pragmas (WAL, busy_timeout, foreign_keys) are applied after connect
  * - The --accept-data-loss path no longer exists in the codebase
+ * - No external process (node.exe / Prisma CLI) is spawned
  *
- * We mock execFileSync and the Prisma client so no real Prisma CLI or SQLite
- * file is needed for these unit tests.
+ * We mock the Prisma client so no real SQLite file or CLI is needed.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -35,21 +35,16 @@ vi.mock('electron-log/main', () => ({
   },
 }));
 
-// We will override execFileSync per-test
-const mockExecFileSync = vi.fn();
-vi.mock('node:child_process', () => ({
-  execFileSync: (...args: unknown[]) => mockExecFileSync(...args),
-  spawn: vi.fn(),
-}));
-
 // Track prisma calls
 const mockPrismaExecuteRawUnsafe = vi.fn().mockResolvedValue(undefined);
+const mockPrismaQueryRawUnsafe = vi.fn().mockResolvedValue([]);
 const mockPrismaConnect = vi.fn().mockResolvedValue(undefined);
 const mockPrismaDisconnect = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../generated/prisma', () => ({
   PrismaClient: vi.fn().mockImplementation(() => ({
     $executeRawUnsafe: mockPrismaExecuteRawUnsafe,
+    $queryRawUnsafe: mockPrismaQueryRawUnsafe,
     $connect: mockPrismaConnect,
     $disconnect: mockPrismaDisconnect,
   })),
@@ -70,6 +65,9 @@ function writeDummyDb(dbPath: string): void {
 describe('database.ts — migration safety', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: queries return empty list (no prior migrations applied)
+    mockPrismaQueryRawUnsafe.mockResolvedValue([]);
+    mockPrismaExecuteRawUnsafe.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -77,9 +75,7 @@ describe('database.ts — migration safety', () => {
   });
 
   it('does not contain --accept-data-loss in source', async () => {
-    // Regression guard: ensure the dangerous fallback was removed from the executable source.
-    // We strip comment lines before checking so that the "removed" notice in the JSDoc
-    // does not trigger a false positive.
+    // Regression guard: ensure the dangerous fallback was removed from the source.
     const src = fs.readFileSync(
       path.join(__dirname, '../services/database.ts'),
       'utf8',
@@ -93,6 +89,26 @@ describe('database.ts — migration safety', () => {
       .join('\n');
     expect(executableLines).not.toContain('--accept-data-loss');
     expect(executableLines).not.toContain('db push');
+  });
+
+  it('source does not spawn node.exe or any external process', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../services/database.ts'),
+      'utf8',
+    );
+    // Strip comment lines to avoid false positives from comments
+    const executableLines = src
+      .split('\n')
+      .filter((l) => {
+        const t = l.trim();
+        return t !== '' && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+      })
+      .join('\n');
+    expect(executableLines).not.toContain('node.exe');
+    expect(executableLines).not.toContain('spawnSync');
+    expect(executableLines).not.toContain('execFileSync');
+    expect(executableLines).not.toContain('execSync');
+    expect(executableLines).not.toContain('child_process');
   });
 
   it('source contains createBackup helper', () => {
@@ -114,13 +130,13 @@ describe('database.ts — migration safety', () => {
     expect(src).toContain('foreign_keys=ON');
   });
 
-  it('source uses migrate deploy (not db push)', () => {
+  it('source uses programmatic SQL migration (not db push)', () => {
     const src = fs.readFileSync(
       path.join(__dirname, '../services/database.ts'),
       'utf8',
     );
-    expect(src).toContain('migrate deploy');
-    // db push must not appear even in comments (except as historical note)
+    expect(src).toContain('_prisma_migrations');
+    // db push must not appear in non-comment lines
     const lines = src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'));
     for (const line of lines) {
       expect(line).not.toContain('db push');
@@ -131,19 +147,13 @@ describe('database.ts — migration safety', () => {
     const dbPath = makeTempDbPath();
     writeDummyDb(dbPath);
 
-    // Successful migration
-    mockExecFileSync.mockReturnValue(Buffer.from(''));
-
-    // Import after mocks are set up
     const { runMigrationsForTest } = await createTestableRunMigrations();
     await runMigrationsForTest(dbPath);
 
-    // The backup should have been created and then cleaned up (successful migration)
-    // We can only verify execFileSync was called with migrate deploy
-    const calls = mockExecFileSync.mock.calls;
-    expect(calls.length).toBeGreaterThanOrEqual(1);
-    const migrateCall = calls.find((c) => Array.isArray(c[1]) && (c[1] as string[]).includes('deploy'));
-    expect(migrateCall).toBeDefined();
+    // Backup should have been created and then cleaned up (successful migration)
+    // Prisma connect + createTable + queryRaw should have been called
+    expect(mockPrismaConnect).toHaveBeenCalled();
+    expect(mockPrismaExecuteRawUnsafe).toHaveBeenCalled();
 
     // Cleanup
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
@@ -153,10 +163,8 @@ describe('database.ts — migration safety', () => {
     const dbPath = makeTempDbPath();
     writeDummyDb(dbPath);
 
-    // Migration fails
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('Migration engine: column X is not nullable');
-    });
+    // Migration fails on the CREATE TABLE step
+    mockPrismaExecuteRawUnsafe.mockRejectedValueOnce(new Error('disk I/O error'));
 
     const { runMigrationsForTest } = await createTestableRunMigrations();
 
@@ -176,8 +184,6 @@ describe('database.ts — migration safety', () => {
     // DB does NOT exist yet — fresh install path
     expect(fs.existsSync(dbPath)).toBe(false);
 
-    mockExecFileSync.mockReturnValue(Buffer.from(''));
-
     const { runMigrationsForTest } = await createTestableRunMigrations();
     // Should not throw
     await expect(runMigrationsForTest(dbPath)).resolves.toBeUndefined();
@@ -186,9 +192,7 @@ describe('database.ts — migration safety', () => {
   it('failed migration on fresh DB propagates error without restore attempt', async () => {
     const dbPath = makeTempDbPath();
     // No DB file — no backup to restore from
-    mockExecFileSync.mockImplementation(() => {
-      throw new Error('schema not found');
-    });
+    mockPrismaExecuteRawUnsafe.mockRejectedValueOnce(new Error('schema not found'));
 
     const { runMigrationsForTest } = await createTestableRunMigrations();
 
@@ -201,8 +205,6 @@ describe('database.ts — pragma application', () => {
   it('applies WAL, busy_timeout, foreign_keys, synchronous pragmas', async () => {
     mockPrismaExecuteRawUnsafe.mockResolvedValue(undefined);
 
-    // Call applySqlitePragmas indirectly by importing and calling it via the
-    // testable export wrapper below
     const { applyPragmasForTest } = await createTestableApplyPragmas();
     await applyPragmasForTest();
 
@@ -226,14 +228,14 @@ describe('database.ts — pragma application', () => {
 //
 // These helpers re-implement the private functions from database.ts in a
 // test-controlled way (same logic, injectable mocks) so we can exercise the
-// backup/restore paths without needing a real Prisma CLI.
+// backup/restore paths without needing a real Prisma client or SQLite file.
 
 async function createTestableRunMigrations() {
   const log = (await import('electron-log/main')).default;
 
   async function runMigrationsForTest(dbPath: string): Promise<void> {
-    const schemaPath = path.join(__dirname, '../../prisma/schema.prisma');
-    const prismaBin = 'prisma'; // mocked via vi.mock('node:child_process')
+    // migrationsDir points at the real prisma/migrations in the source tree
+    const migrationsDir = path.join(__dirname, '../../prisma/migrations');
 
     const dbExists = fs.existsSync(dbPath);
     let backupPath: string | null = null;
@@ -246,12 +248,10 @@ async function createTestableRunMigrations() {
     }
 
     try {
-      mockExecFileSync(prismaBin, ['migrate', 'deploy', '--schema', schemaPath], {
-        env: { ...process.env, DESKTOP_DATABASE_URL: `file:${dbPath}` },
-        timeout: 60_000,
-        stdio: 'pipe',
-      });
-      log.info('[db-test] Migrations applied');
+      await mockPrismaConnect();
+      // Ensure _prisma_migrations table exists (may throw to simulate failure)
+      await mockPrismaExecuteRawUnsafe('CREATE TABLE IF NOT EXISTS "_prisma_migrations" (...)');
+      await mockPrismaQueryRawUnsafe('SELECT migration_name FROM "_prisma_migrations"');
 
       if (backupPath && fs.existsSync(backupPath)) {
         try { fs.unlinkSync(backupPath); } catch { /* non-critical */ }
@@ -271,6 +271,8 @@ async function createTestableRunMigrations() {
       }
 
       throw new Error(`Database migration failed and the previous version has been restored.\n\nDetails: ${msg}`);
+    } finally {
+      await mockPrismaDisconnect().catch(() => { /* ignore */ });
     }
   }
 
@@ -292,3 +294,4 @@ async function createTestableApplyPragmas() {
 
   return { applyPragmasForTest };
 }
+

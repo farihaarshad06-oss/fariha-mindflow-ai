@@ -4,9 +4,10 @@
  *
  * Migration safety guarantees:
  * 1. A timestamped backup is created before any migration runs.
- * 2. Only `prisma migrate deploy` (versioned, non-destructive) is used.
- *    The `--accept-data-loss` fallback has been removed; it must never be used
- *    in production because it can silently drop columns or tables.
+ * 2. Migrations are applied programmatically by reading the SQL migration files
+ *    and executing them via the Prisma client — no external node.exe or Prisma
+ *    CLI binary is spawned.  This works correctly in both development and in the
+ *    packaged (ASAR) app where node.exe is not available on the user's machine.
  * 3. On migration failure the backup is restored and a user-facing error is thrown.
  * 4. WAL journal mode, a 10-second busy timeout and foreign-key enforcement are
  *    applied via pragmas after every successful connect.
@@ -14,7 +15,6 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { app } from 'electron';
 import { PrismaClient } from '../generated/prisma';
 import log from 'electron-log/main';
@@ -67,31 +67,124 @@ export async function closeDatabase(): Promise<void> {
 
 // ── Migration helpers ──────────────────────────────────────────────────────
 
-async function runMigrations(dbPath: string): Promise<void> {
-  const schemaPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'prisma', 'schema.prisma')
-    : path.join(__dirname, '..', '..', 'prisma', 'schema.prisma');
+/**
+ * Returns the directory that contains the Prisma migration folders.
+ * In development this is the source tree; in the packaged app the migrations
+ * folder is copied into extraResources so they are accessible on disk.
+ */
+export function getMigrationsDir(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'prisma', 'migrations')
+    : path.join(__dirname, '..', '..', 'prisma', 'migrations');
+}
 
-  const prismaCliArgs = resolvePrismaCli();
+/**
+ * Applies pending Prisma migrations programmatically using raw SQL.
+ *
+ * This approach never spawns an external process (no node.exe, no Prisma CLI),
+ * making it safe for packaged Electron apps where the system Node binary is
+ * not guaranteed to be present.
+ *
+ * The strategy mirrors what `prisma migrate deploy` does:
+ * 1. Ensure the `_prisma_migrations` tracking table exists.
+ * 2. Read the list of migration folders sorted by name (timestamp prefix).
+ * 3. Skip migrations already recorded in the tracking table.
+ * 4. Execute each pending migration's SQL, then record it as applied.
+ */
+async function applyMigrationsSQL(prisma: PrismaClient, migrationsDir: string): Promise<void> {
+  // Ensure the migrations tracking table exists (idempotent)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
+      "id"                    TEXT PRIMARY KEY NOT NULL,
+      "checksum"              TEXT NOT NULL,
+      "finished_at"           DATETIME,
+      "migration_name"        TEXT NOT NULL,
+      "logs"                  TEXT,
+      "rolled_back_at"        DATETIME,
+      "started_at"            DATETIME NOT NULL DEFAULT current_timestamp,
+      "applied_steps_count"   INTEGER UNSIGNED NOT NULL DEFAULT 0
+    )
+  `);
+
+  // Collect applied migration names
+  const applied = await prisma.$queryRawUnsafe<{ migration_name: string }[]>(
+    'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL',
+  );
+  const appliedSet = new Set(applied.map((r) => r.migration_name));
+
+  // Read available migrations from disk, sorted by name
+  if (!fs.existsSync(migrationsDir)) {
+    log.warn('[db] Migrations directory not found:', migrationsDir);
+    return;
+  }
+  const entries = fs.readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+
+  for (const migrationName of entries) {
+    if (appliedSet.has(migrationName)) {
+      log.info('[db] Migration already applied:', migrationName);
+      continue;
+    }
+
+    const sqlFile = path.join(migrationsDir, migrationName, 'migration.sql');
+    if (!fs.existsSync(sqlFile)) {
+      log.warn('[db] No migration.sql found for:', migrationName);
+      continue;
+    }
+
+    const sql = fs.readFileSync(sqlFile, 'utf8');
+    log.info('[db] Applying migration:', migrationName);
+
+    // Record the migration as started
+    const id = `${Date.now()}-${migrationName}`;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "_prisma_migrations" (id, checksum, migration_name, started_at, applied_steps_count)
+       VALUES (?, ?, ?, datetime('now'), 0)`,
+      id, '', migrationName,
+    );
+
+    // Execute each SQL statement in the migration file
+    const statements = sql
+      .split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith('--'));
+
+    for (const stmt of statements) {
+      await prisma.$executeRawUnsafe(stmt);
+    }
+
+    // Mark as finished
+    await prisma.$executeRawUnsafe(
+      `UPDATE "_prisma_migrations"
+       SET finished_at = datetime('now'), applied_steps_count = ?
+       WHERE id = ?`,
+      statements.length, id,
+    );
+
+    log.info('[db] Migration applied:', migrationName);
+  }
+}
+
+async function runMigrations(dbPath: string): Promise<void> {
+  const migrationsDir = getMigrationsDir();
   const dbExists = fs.existsSync(dbPath);
 
   // Back up the existing database before touching it so we can restore on failure
   const backupPath = dbExists ? createBackup(dbPath) : null;
   log.info('[db] Pre-migration backup:', backupPath ?? 'none (fresh database)');
 
+  // We need a temporary Prisma client to run the migrations before the main
+  // client is created (the main client is stored in _prisma after migrations).
+  const dbUrl = `file:${dbPath}`;
+  const migrationClient = new PrismaClient({
+    datasources: { db: { url: dbUrl } },
+  });
+
   try {
-    // Both DESKTOP_DATABASE_URL (used by the schema's datasource env()) and
-    // DATABASE_URL (Prisma CLI fallback) must point at the writable db file.
-    const dbUrl = `file:${dbPath}`;
-    execFileSync(prismaCliArgs[0], [...prismaCliArgs.slice(1), 'migrate', 'deploy', '--schema', schemaPath], {
-      env: {
-        ...process.env,
-        DESKTOP_DATABASE_URL: dbUrl,
-        DATABASE_URL: dbUrl,
-      },
-      timeout: 60_000,
-      stdio: 'pipe',
-    });
+    await migrationClient.$connect();
+    await applyMigrationsSQL(migrationClient, migrationsDir);
     log.info('[db] Migrations applied successfully');
 
     // Verify the database is readable after migration
@@ -119,6 +212,8 @@ async function runMigrations(dbPath: string): Promise<void> {
     throw new Error(
       `Database migration failed and the previous version has been restored.\n\nDetails: ${msg}\n\nPlease report this to support.`,
     );
+  } finally {
+    await migrationClient.$disconnect().catch(() => { /* ignore */ });
   }
 }
 
@@ -156,56 +251,3 @@ async function applySqlitePragmas(prisma: PrismaClient): Promise<void> {
   }
 }
 
-// ── Prisma CLI resolution ──────────────────────────────────────────────────
-
-/**
- * Resolves the Prisma CLI for running `migrate deploy` at runtime.
- *
- * In development: uses the local node_modules/.bin/prisma binary.
- *
- * In the packaged app: `node_modules/prisma` is listed in electron-builder's
- * `asarUnpack` so it lands in `app.asar.unpacked/node_modules/prisma` — a real
- * directory on disk that can be executed with the system Node binary (the
- * `node` found next to `process.execPath`, NOT `process.execPath` itself which
- * is the Electron/app EXE and must never be used to spawn a sub-process).
- *
- * Returns [executable, ...leadingArgs] so the caller can prepend them.
- */
-export function resolvePrismaCli(): string[] {
-  // Development: local .bin symlink (works on all platforms in dev mode)
-  const binName = process.platform === 'win32' ? 'prisma.cmd' : 'prisma';
-  const localBin = path.join(
-    process.cwd(),
-    'node_modules',
-    '.bin',
-    binName,
-  );
-  if (fs.existsSync(localBin)) return [localBin];
-
-  // Packaged app: prisma is unpacked from app.asar into app.asar.unpacked.
-  // We need a real Node binary — resolve it from the directory that contains
-  // the Electron executable.  On Windows the system node.exe may not be on
-  // PATH inside an installed app, so we look next to process.execPath first.
-  const unpackedPrismaJs = path.join(
-    process.resourcesPath,
-    'app.asar.unpacked',
-    'node_modules',
-    'prisma',
-    'build',
-    'index.js',
-  );
-
-  if (fs.existsSync(unpackedPrismaJs)) {
-    // Locate a node binary: prefer one next to the Electron executable, then
-    // fall back to whatever is on PATH.
-    const nodeExeName = process.platform === 'win32' ? 'node.exe' : 'node';
-    const nodeBesideExe = path.join(path.dirname(process.execPath), nodeExeName);
-    const nodeExe = fs.existsSync(nodeBesideExe) ? nodeBesideExe : nodeExeName;
-    return [nodeExe, unpackedPrismaJs];
-  }
-
-  throw new Error(
-    'Prisma CLI not found. ' +
-    `Expected unpacked path: ${path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'prisma', 'build', 'index.js')}`,
-  );
-}
