@@ -7,21 +7,21 @@ import { toPublicUser } from '../auth/auth.mapper';
 export class UsersService {
   constructor(private readonly users: UsersRepository) {}
 
-  list(): User[] {
-    return this.users.list().map(toPublicUser);
+  async list(): Promise<User[]> {
+    const users = await this.users.list();
+    return users.map(toPublicUser);
   }
 
-  getById(id: string): User {
-    const stored = this.users.findById(id);
+  async getById(id: string): Promise<User> {
+    const stored = await this.users.findById(id);
     if (!stored) throw new NotFoundException('User not found.');
     return toPublicUser(stored);
   }
 
-  disable(id: string): User {
-    const stored = this.users.findById(id);
+  async disable(id: string): Promise<User> {
+    const stored = await this.users.findById(id);
     if (!stored) throw new NotFoundException('User not found.');
-    stored.status = 'DISABLED';
-    this.users.save(stored);
-    return toPublicUser(stored);
+    const updated = await this.users.save({ ...stored, status: 'DISABLED' });
+    return toPublicUser(updated);
   }
 }

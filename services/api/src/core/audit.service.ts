@@ -1,17 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { AuditLog } from '../types';
-import { AuditLog as PrismaAuditLog } from '@prisma/client';
+import type { AuditLog } from '@mindflow/types';
+import { AuditRepository } from './repositories';
 
 @Injectable()
 export class AuditService {
-  constructor() {}
+  constructor(private readonly audits: AuditRepository) {}
 
-  record(actorId: string, actorType: string, action: string, resource: string, resourceId: string, requestId?: string) {
-    // In a real implementation, this would save to a database or external logging system
-    // For now, we'll just log to console for demonstration
-    console.log(`[AUDIT] ${new Date().toISOString()} | Actor: ${actorId} | Type: ${actorType} | Action: ${action} | Resource: ${resource} | ID: ${resourceId}`);
-    
-    // In a real implementation, we would save this to a database or external logging service
-    // For now, we'll just log to console as a placeholder
-    console.log(`[AUDIT] ${new Date().toISOString()} | ${actorId} | ${actorType} | ${action} | ${resource} | ${resourceId}`);
+  async record(input: Omit<AuditLog, 'id' | 'createdAt'>): Promise<AuditLog> {
+    return this.audits.create({
+      ...input,
+      metadata: input.metadata ?? {},
+    });
   }
+
+  async list(): Promise<AuditLog[]> {
+    return this.audits.list();
+  }
+}

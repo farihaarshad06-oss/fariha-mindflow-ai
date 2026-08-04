@@ -1,862 +1,375 @@
-import { PrismaClient } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
-import { JwtService } from '../core/jwt.service';
-import { UsersRepository } from './users.service';
-import { CoursesRepository } from './courses.service';
-import { LecturesRepository } from './lectures.service';
-import { ProcessingJobsRepository } from './processing-jobs.service';
-import { UsageRepository } from './usage.service';
-import { AuditRepository } from './audit.service';
-import { ConsentRepository } from './consent.service';
-import type { User, Course, Lecture, ProcessingJob, UsageEvent, AuditLog, ConsentRecord, UserProfile } from '@mindflow/types';
+import {
+  Prisma,
+  PrismaClient,
+  type AuditLog as PrismaAuditLog,
+  type ConsentRecord as PrismaConsentRecord,
+  type Course as PrismaCourse,
+  type Lecture as PrismaLecture,
+  type ProcessingJob as PrismaProcessingJob,
+  type UsageEvent as PrismaUsageEvent,
+  type User as PrismaUser,
+} from '@prisma/client';
+import type { AuditLog, ConsentRecord, Course, Lecture, ProcessingJob, UsageEvent, User } from '@mindflow/types';
+
+export type StoredUser = User & { passwordHash: string };
+export type StoredLecture = Lecture & { transcript?: string | null; consentAcknowledged: boolean };
+export type StoredConsent = ConsentRecord;
+
+@Injectable()
+export class PrismaService extends PrismaClient {}
 
 @Injectable()
 export class UsersRepository {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = new PrismaClient();
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(input: Omit<StoredUser, 'id' | 'createdAt' | 'updatedAt' | 'status'>): Promise<StoredUser> {
-    const now = new Date().toISOString();
     const user = await this.prisma.user.create({
       data: {
-        ...input,
+        email: input.email.toLowerCase(),
+        fullName: input.fullName,
+        passwordHash: input.passwordHash,
+        roles: input.roles as Prisma.InputJsonValue,
         status: 'PENDING_VERIFICATION',
-        createdAt: new Date(),
-        updatedAt: new Date(),
       },
     });
-    return toPublicUser(user);
+    return toStoredUser(user);
   }
 
   async findByEmail(email: string): Promise<StoredUser | undefined> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
-    if (user) {
-      return toPublicUser(user);
-    }
-    return undefined;
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    return user ? toStoredUser(user) : undefined;
   }
 
   async findById(id: string): Promise<StoredUser | undefined> {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-    });
-    if (user) {
-      return toPublicUser(user);
-    }
-    return undefined;
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    return user ? toStoredUser(user) : undefined;
   }
 
   async save(user: StoredUser): Promise<StoredUser> {
-    const existing = await this.prisma.user.findUnique({ where: { id: user.id } });
-    if (user) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          ...user,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    } else {
-      await this.prisma.user.create({
-        data: {
-          ...user,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    }
-    return toPublicUser(await this.prisma.user.findUnique({ where: { id: user.id } }));
+    const saved = await this.prisma.user.upsert({
+      where: { id: user.id },
+      update: {
+        email: user.email.toLowerCase(),
+        fullName: user.fullName,
+        passwordHash: user.passwordHash,
+        roles: user.roles as Prisma.InputJsonValue,
+        status: user.status,
+      },
+      create: {
+        id: user.id,
+        email: user.email.toLowerCase(),
+        fullName: user.fullName,
+        passwordHash: user.passwordHash,
+        roles: user.roles as Prisma.InputJsonValue,
+        status: user.status,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    });
+    return toStoredUser(saved);
   }
 
   async list(): Promise<StoredUser[]> {
-    const users = await this.prisma.user.findMany();
-    return users.map(toPublicUser);
+    const users = await this.prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+    return users.map(toStoredUser);
   }
 }
 
+@Injectable()
 export class CoursesRepository {
-  private prisma: PrismaClient;
+  constructor(private readonly prisma: PrismaService) {}
 
-  constructor() {
-    this.prisma = new PrismaClient();
-  }
-
-  async create(input: Omit<Course, 'id' | 'createdAt' | 'updatedAt' | 'lectureCount' | 'weakTopics' | 'progress'>): Promise<Course> {
-    const now = new Date().toISOString();
-    const course = await this.prisma.course.create({
-      data: {
-        ...input,
-        lectureCount: 0,
-        weakTopics: [],
-        progress: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+  async listByOwner(ownerId: string): Promise<Course[]> {
+    const courses = await this.prisma.course.findMany({
+      where: { ownerId },
+      orderBy: { updatedAt: 'desc' },
     });
-    return this.toPublicCourse(course);
+    return courses.map(toCourse);
   }
 
   async findById(id: string): Promise<Course | undefined> {
-    const course = await this.prisma.course.findUnique({
-      where: { id },
-    });
-    if (course) {
-      return this.toPublicCourse(course);
-    }
-    return undefined;
+    const course = await this.prisma.course.findUnique({ where: { id } });
+    return course ? toCourse(course) : undefined;
   }
 
-  async getForOwner(id: string, ownerId: string): Promise<Course> {
-    const course = await this.prisma.course.findUnique({
-      where: { id },
-      include: { owner: true },
-    });
-    if (course && course.ownerId === ownerId) {
-      return this.toPublicCourse(course);
-    }
-    throw new Error('Access denied');
+  async getForOwner(id: string, ownerId: string): Promise<Course | undefined> {
+    const course = await this.prisma.course.findFirst({ where: { id, ownerId } });
+    return course ? toCourse(course) : undefined;
   }
 
-  async create(input: { title: string; description?: string; color?: string; nextExamDate?: string }, ownerId: string): Promise<Course> {
-    const now = new Date().toISOString();
+  async create(input: { title: string; description?: string; color?: string; nextExamDate?: string; ownerId: string }): Promise<Course> {
     const course = await this.prisma.course.create({
       data: {
-        ...input,
-        ownerId,
+        ownerId: input.ownerId,
+        title: input.title,
+        description: input.description,
+        color: input.color,
+        nextExamDate: input.nextExamDate ? new Date(input.nextExamDate) : null,
         lectureCount: 0,
-        weakTopics: [],
+        weakTopics: Prisma.JsonNull,
         progress: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       },
     });
-    return this.toPublicCourse(course);
+    return toCourse(course);
   }
 
   async remove(id: string, ownerId: string): Promise<{ id: string }> {
-    const course = await this.prisma.course.findUnique({
-      where: { id },
-    });
-    if (!course) {
-      throw new Error('Course not found');
-    }
-    if (course.ownerId !== ownerId) {
-      throw new Error('Access denied');
-    }
-    await this.prisma.course.delete({ where: { id } });
+    await this.prisma.course.deleteMany({ where: { id, ownerId } });
     return { id };
   }
 }
 
+@Injectable()
 export class LecturesRepository {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = new PrismaClient();
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(input: Omit<StoredLecture, 'id' | 'createdAt' | 'updatedAt'>): Promise<StoredLecture> {
-    const now = new Date().toISOString();
     const lecture = await this.prisma.lecture.create({
       data: {
-        ...input,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        title: input.title,
+        ownerId: input.ownerId,
+        courseId: input.courseId ?? null,
+        state: input.state,
+        transcript: input.transcript ?? null,
+        consentAcknowledged: input.consentAcknowledged,
       },
     });
-    return this.toStoredLecture(lecture);
+    return toStoredLecture(lecture);
   }
 
   async findById(id: string): Promise<StoredLecture | undefined> {
-    const lecture = await this.prisma.lecture.findUnique({
-      where: { id },
-    });
-    if (lecture) {
-      return this.toStoredLecture(lecture);
-    }
-    return undefined;
+    const lecture = await this.prisma.lecture.findUnique({ where: { id } });
+    return lecture ? toStoredLecture(lecture) : undefined;
   }
 
   async findByIdWithOwner(id: string, ownerId: string): Promise<StoredLecture | undefined> {
-    const lecture = await this.prisma.lecture.findUnique({
-      where: { id },
-      include: { owner: true },
-    });
-    if (lecture) {
-      if (lecture.ownerId === ownerId) {
-        return this.toStoredLecture(lecture);
-      } else {
-        throw new Error('Access denied');
-      }
-    }
-    return undefined;
+    const lecture = await this.prisma.lecture.findFirst({ where: { id, ownerId } });
+    return lecture ? toStoredLecture(lecture) : undefined;
   }
 
   async listByOwner(ownerId: string): Promise<StoredLecture[]> {
-    return this.prisma.lecture.findMany({
+    const lectures = await this.prisma.lecture.findMany({
       where: { ownerId },
-    }).then(lectures => lectures.map(this.toStoredLecture));
+      orderBy: { updatedAt: 'desc' },
+    });
+    return lectures.map(toStoredLecture);
   }
 
   async list(): Promise<StoredLecture[]> {
-    return this.prisma.lecture.findMany().then(lectures => lectures.map(this.toStoredLecture));
+    const lectures = await this.prisma.lecture.findMany({ orderBy: { updatedAt: 'desc' } });
+    return lectures.map(toStoredLecture);
   }
 
   async save(lecture: StoredLecture): Promise<StoredLecture> {
-    const existing = await this.prisma.lecture.findUnique({ where: { id: lecture.id } });
-    if (existing) {
-      return this.prisma.lecture.update({
-        where: { id: lecture.id },
-        data: {
-          ...lecture,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    } else {
-      return this.prisma.lecture.create({
-        data: {
-          ...lecture,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    }
+    const saved = await this.prisma.lecture.update({
+      where: { id: lecture.id },
+      data: {
+        title: lecture.title,
+        courseId: lecture.courseId ?? null,
+        ownerId: lecture.ownerId,
+        state: lecture.state,
+        transcript: lecture.transcript ?? null,
+        consentAcknowledged: lecture.consentAcknowledged,
+      },
+    });
+    return toStoredLecture(saved);
   }
 
   async remove(id: string, ownerId: string): Promise<void> {
-    const lecture = await this.prisma.lecture.findUnique({
-      where: { id },
-    });
-    if (!lecture) {
-      throw new Error('Lecture not found');
-    }
-    if (lecture.ownerId !== ownerId) {
-      throw new Error('Access denied');
-    }
-    await this.prisma.lecture.delete({ where: { id } });
+    await this.prisma.lecture.deleteMany({ where: { id, ownerId } });
   }
 }
 
+@Injectable()
 export class ProcessingJobsRepository {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = new PrismaClient();
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(input: Omit<ProcessingJob, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingJob> {
-    const now = new Date().toISOString();
-    const job = await this.prisma.processingJob.create({
-      data: {
-        ...input,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
-    return this.toStoredJob(job);
+    const job = await this.prisma.processingJob.create({ data: input });
+    return toProcessingJob(job);
   }
 
   async findById(id: string): Promise<ProcessingJob | undefined> {
-    const job = await this.prisma.processingJob.findUnique({
-      where: { id },
-    });
-    if (job) {
-      return this.toStoredJob(job);
-    }
-    return undefined;
+    const job = await this.prisma.processingJob.findUnique({ where: { id } });
+    return job ? toProcessingJob(job) : undefined;
   }
 
   async list(): Promise<ProcessingJob[]> {
-    return this.prisma.processingJob.findMany().then(jobs => jobs.map(this.toStoredJob));
+    const jobs = await this.prisma.processingJob.findMany({ orderBy: { updatedAt: 'desc' } });
+    return jobs.map(toProcessingJob);
   }
 
   async save(job: ProcessingJob): Promise<ProcessingJob> {
-    const existing = await this.prisma.processingJob.findUnique({ where: { id: job.id } });
-    if (existing) {
-      return this.prisma.processingJob.update({
-        where: { id: job.id },
-        data: {
-          ...job,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    } else {
-      return this.prisma.processingJob.create({
-        data: {
-          ...job,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    }
+    const saved = await this.prisma.processingJob.update({
+      where: { id: job.id },
+      data: {
+        ownerId: job.ownerId,
+        lectureId: job.lectureId,
+        type: job.type,
+        status: job.status,
+        provider: job.provider,
+        progress: job.progress,
+        errorMessage: job.errorMessage ?? null,
+      },
+    });
+    return toProcessingJob(saved);
   }
 }
 
+@Injectable()
 export class UsageRepository {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = new PrismaClient();
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(input: Omit<UsageEvent, 'id' | 'recordedAt'>): Promise<UsageEvent> {
-    const event = await this.prisma.usageEvent.create({
-      data: {
-        ...input,
-        recordedAt: new Date().toISOString(),
-      },
-    });
-    return this.toStoredEvent(event);
+    const event = await this.prisma.usageEvent.create({ data: input });
+    return toUsageEvent(event);
   }
 
   async list(): Promise<UsageEvent[]> {
-    return this.prisma.usageEvent.findMany().then(events => events.map(this.toStoredEvent));
+    const events = await this.prisma.usageEvent.findMany({ orderBy: { recordedAt: 'desc' } });
+    return events.map(toUsageEvent);
   }
 }
 
+@Injectable()
 export class AuditRepository {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = new PrismaClient();
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(input: Omit<AuditLog, 'id' | 'createdAt'>): Promise<AuditLog> {
-    const log = await this.prisma.auditLog.create({
-      data: {
-        ...input,
-        createdAt: new Date().toISOString(),
-      },
-    });
-    return this.toStoredLog(log);
+    const log = await this.prisma.auditLog.create({ data: input });
+    return toAuditLog(log);
   }
 
   async list(): Promise<AuditLog[]> {
-    return this.prisma.auditLog.findMany().then(logs => logs.map(this.toStoredLog));
+    const logs = await this.prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' } });
+    return logs.map(toAuditLog);
   }
 }
 
+@Injectable()
 export class ConsentRepository {
-  private prisma: PrismaClient;
-
-  constructor() {
-    this.prisma = new PrismaClient();
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(input: Omit<StoredConsent, 'id' | 'createdAt'>): Promise<StoredConsent> {
-    const record = await this.prisma.consentRecord.create({
-      data: {
-        ...input,
-        createdAt: new Date().toISOString(),
-      },
-    });
-    return this.toStoredConsent(record);
+    const record = await this.prisma.consentRecord.create({ data: input });
+    return toConsentRecord(record);
   }
 
   async listByUser(userId: string): Promise<StoredConsent[]> {
-    return this.prisma.consentRecord.findMany({
+    const records = await this.prisma.consentRecord.findMany({
       where: { userId },
-    }).then(records => records.map(this.toStoredConsent));
+      orderBy: { createdAt: 'desc' },
+    });
+    return records.map(toConsentRecord);
   }
 }
 
-function toPublicUser(user: any): StoredUser {
+@Injectable()
+export class UploadRepository {
+  constructor(private readonly prisma: PrismaService) {}
+}
+
+function toStoredUser(user: PrismaUser): StoredUser {
   return {
     id: user.id,
     email: user.email,
-    passwordHash: user.passwordHash,
     fullName: user.fullName,
-    status: user.status,
-    roles: user.roles,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
+    roles: toStringArray(user.roles),
+    status: user.status as StoredUser['status'],
+    passwordHash: user.passwordHash,
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
   };
 }
 
-function toPublicUserProfile(profile: any): UserProfile {
-  return {
-    id: profile.id,
-    userId: profile.userId,
-    role: profile.role,
-    institution: profile.institution,
-    degree: profile.degree,
-    semester: profile.semester,
-    preferredLanguage: profile.preferredLanguage,
-    studyGoals: profile.studyGoals,
-    consentAcknowledged: profile.consentAcknowledged,
-    createdAt: profile.createdAt,
-    updatedAt: profile.updatedAt,
-  };
-}
-
-function toPublicUserProfile(profile: any): UserProfile {
-  return {
-    id: profile.id,
-    userId: profile.userId,
-    role: profile.role,
-    institution: profile.institution,
-    degree: profile.degree,
-    semester: profile.semester,
-    preferredLanguage: profile.preferredLanguage,
-    studyGoals: profile.studyGoals,
-    consentAcknowledged: profile.consentAcknowledged,
-    createdAt: profile.createdAt,
-    updatedAt: profile.updatedAt,
-  };
-}
-
-function toPublicCourse(course: any): Course {
+function toCourse(course: PrismaCourse): Course {
   return {
     id: course.id,
     ownerId: course.ownerId,
     title: course.title,
-    description: course.description,
-    color: course.color,
-    nextExamDate: course.nextExamDate,
+    description: course.description ?? undefined,
+    color: course.color ?? undefined,
+    nextExamDate: course.nextExamDate?.toISOString(),
     lectureCount: course.lectureCount,
-    weakTopics: course.weakTopics,
+    weakTopics: toStringArray(course.weakTopics),
     progress: course.progress,
-    createdAt: course.createdAt,
-    updatedAt: course.updatedAt,
+    createdAt: course.createdAt.toISOString(),
+    updatedAt: course.updatedAt.toISOString(),
   };
 }
 
-function toStoredCourse(course: any): Course {
+function toStoredLecture(lecture: PrismaLecture): StoredLecture {
   return {
-    id: course.id,
-    ownerId: course.ownerId,
-    title: course.title,
-    description: course.description,
-    color: course.color,
-    nextExamDate: course.nextExamDate,
-    lectureCount: course.lectureCount,
-    weakTopics: course.weakTopics,
-    progress: course.progress,
-    createdAt: course.createdAt,
-    updatedAt: course.updatedAt,
+    id: lecture.id,
+    title: lecture.title,
+    courseId: lecture.courseId ?? undefined,
+    ownerId: lecture.ownerId,
+    state: lecture.state as StoredLecture['state'],
+    transcript: lecture.transcript ?? undefined,
+    consentAcknowledged: lecture.consentAcknowledged,
+    createdAt: lecture.createdAt.toISOString(),
+    updatedAt: lecture.updatedAt.toISOString(),
   };
 }
 
-function toStoredCourseWithOwner(course: any): StoredCourse {
-  return {
-    id: course.id,
-    ownerId: course.ownerId,
-    title: course.title,
-    description: course.description,
-    color: course.color,
-    nextExamDate: course.nextExamDate,
-    lectureCount: course.lectureCount,
-    weakTopics: course.weakTopics,
-    progress: course.progress,
-    createdAt: course.createdAt,
-    updatedAt: course.updatedAt,
-  };
-}
-
-function toStoredLecture(course: any): StoredLecture {
-  return {
-    id: course.id,
-    courseId: course.courseId,
-    ownerId: course.ownerId,
-    title: course.title,
-    state: course.state,
-    audioFileId: course.audioFileId,
-    durationSeconds: course.durationSeconds,
-    consentAcknowledged: course.consentAcknowledged,
-    createdAt: course.createdAt,
-    updatedAt: course.updatedAt,
-  };
-}
-
-function toStoredCourse(course: any): Course {
-  return {
-    id: course.id,
-    ownerId: course.ownerId,
-    title: course.title,
-    description: course.description,
-    color: course.color,
-    nextExamDate: course.nextExamDate,
-    lectureCount: course.lectureCount,
-    weakTopics: course.weakTopics,
-    progress: course.progress,
-    createdAt: course.createdAt,
-    updatedAt: course.updatedAt,
-  };
-}
-
-function toStoredCourseWithOwner(course: any): StoredCourse {
-  return {
-    id: course.id,
-    ownerId: course.ownerId,
-    title: course.title,
-    description: course.description,
-    color: course.color,
-    nextExamDate: course.nextExamDate,
-    lectureCount: course.lectureCount,
-    weakTopics: course.weakTopics,
-    progress: course.progress,
-    createdAt: course.createdAt,
-    updatedAt: course.updatedAt,
-  };
-}
-
-function toStoredLecture(course: any): StoredLecture {
-  return {
-    id: course.id,
-    courseId: course.courseId,
-    ownerId: course.ownerId,
-    title: course.title,
-    state: course.state,
-    audioFileId: course.audioFileId,
-    durationSeconds: course.durationSeconds,
-    consentAcknowledged: course.consentAcknowledged,
-    createdAt: course.createdAt,
-    updatedAt: course.updatedAt,
-  };
-}
-
-function toStoredFlashcard(card: any): Flashcard {
-  return {
-    id: card.id,
-    lectureId: card.lectureId,
-    courseId: card.courseId,
-    question: card.question,
-    answer: card.answer,
-  };
-}
-
-function toStoredDocument(document: any): Document {
-  return {
-    id: document.id,
-    ownerId: document.ownerId,
-    title: document.title,
-    fileUrl: document.fileUrl,
-    createdAt: document.createdAt,
-    pages: document.pages,
-    embeddings: document.embeddings,
-  };
-}
-
-function toStoredDocumentPage(page: any): DocumentPage {
-  return {
-    id: page.id,
-    documentId: page.documentId,
-    pageNumber: page.pageNumber,
-    text: page.text,
-  };
-}
-
-function toStoredEmbedding(embedding: any): Embedding {
-  return {
-    id: embedding.id,
-    documentId: embedding.documentId,
-    segmentId: embedding.segmentId,
-    vector: embedding.vector,
-    model: embedding.model,
-  };
-}
-
-function toStoredChatThread(chatThread: any): ChatThread {
-  return {
-    id: chatThread.id,
-    ownerId: chatThread.ownerId,
-    courseId: chatThread.courseId,
-    title: chatThread.title,
-    createdAt: chatThread.createdAt,
-    messages: chatThread.messages,
-  };
-}
-
-function toStoredChatMessage(message: any): ChatMessage {
-  return {
-    id: message.id,
-    threadId: message.threadId,
-    role: message.role,
-    content: message.content,
-    citations: message.citations,
-    createdAt: message.createdAt,
-  };
-}
-
-function toStoredProcessingJob(job: any): ProcessingJob {
+function toProcessingJob(job: PrismaProcessingJob): ProcessingJob {
   return {
     id: job.id,
-    jobType: job.jobType,
-    status: job.status,
-    retryCount: job.retryCount,
-    maxRetries: job.maxRetries,
-    errorCode: job.errorCode,
-    safeErrorMessage: job.safeErrorMessage,
-    diagnosticReference: job.diagnosticReference,
-    payload: job.payload,
-    createdAt: job.createdAt,
-    updatedAt: job.updatedAt,
-    startedAt: job.startedAt,
-    completedAt: job.completedAt,
+    ownerId: job.ownerId,
+    lectureId: job.lectureId,
+    type: job.type as ProcessingJob['type'],
+    status: job.status as ProcessingJob['status'],
+    provider: job.provider,
+    progress: job.progress,
+    errorMessage: job.errorMessage ?? undefined,
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString(),
   };
 }
 
-function toStoredUsageEvent(event: any): UsageEvent {
+function toUsageEvent(event: PrismaUsageEvent): UsageEvent {
   return {
     id: event.id,
     userId: event.userId,
-    kind: event.kind,
+    kind: event.kind as UsageEvent['kind'],
     amount: event.amount,
-    recordedAt: event.recordedAt,
+    meta: toRecord(event.meta),
+    recordedAt: event.recordedAt.toISOString(),
   };
 }
 
-function toStoredAuditLog(log: any): AuditLog {
+function toAuditLog(log: PrismaAuditLog): AuditLog {
   return {
     id: log.id,
     actorId: log.actorId,
-    actorType: log.actorType,
+    actorType: log.actorType as AuditLog['actorType'],
     action: log.action,
     resource: log.resource,
-    resourceId: log.resourceId,
-    requestId: log.requestId,
-    createdAt: log.createdAt,
-    actor: log.actor,
+    resourceId: log.resourceId ?? undefined,
+    metadata: toRecord(log.metadata),
+    requestId: log.requestId ?? undefined,
+    createdAt: log.createdAt.toISOString(),
   };
 }
 
-function toStoredConsent(consent: any): StoredConsent {
+function toConsentRecord(record: PrismaConsentRecord): StoredConsent {
   return {
-    id: consent.id,
-    userId: consent.userId,
-    purpose: consent.purpose,
-    acknowledged: consent.acknowledged,
-    version: consent.version,
-    createdAt: consent.createdAt,
+    id: record.id,
+    userId: record.userId,
+    purpose: record.purpose as StoredConsent['purpose'],
+    acknowledged: record.acknowledged,
+    version: record.version,
+    createdAt: record.createdAt.toISOString(),
   };
 }
 
-function toStoredUpload(upload: any): StoredUpload {
-  return {
-    id: upload.id,
-    ownerId: upload.ownerId,
-    purpose: upload.purpose,
-    fileName: upload.fileName,
-    mimeType: upload.mimeType,
-    fileSize: upload.fileSize,
-    status: upload.status,
-    uploadUrl: upload.uploadUrl,
-    createdAt: upload.createdAt,
-  };
+function toStringArray(value: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
-function toStoredConsent(consent: any): StoredConsent {
-  return {
-    id: consent.id,
-    userId: consent.userId,
-    purpose: consent.purpose,
-    acknowledged: consent.acknowledged,
-    version: consent.version,
-    createdAt: consent.createdAt,
-  };
-}
-
-function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
-  return {
-    id: exportRequest.id,
-    userId: exportRequest.userId,
-    status: exportRequest.status,
-    createdAt: exportRequest.createdAt,
-    completedAt: exportRequest.completedAt,
-  };
-}
-
-function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
-  return {
-    id: deletionRequest.id,
-    userId: deletionRequest.userId,
-    status: deletionRequest.status,
-    createdAt: deletionRequest.createdAt,
-    completedAt: deletionRequest.completedAt,
-  };
-}
-
-function toStoredUpload(upload: any): StoredUpload {
-  return {
-    id: upload.id,
-    ownerId: upload.ownerId,
-    purpose: upload.purpose,
-    fileName: upload.fileName,
-    mimeType: upload.mimeType,
-    fileSize: upload.fileSize,
-    status: upload.status,
-    uploadUrl: upload.uploadUrl,
-    createdAt: upload.createdAt,
-  };
-}
-
-function toStoredConsent(consent: any): StoredConsent {
-  return {
-    id: consent.id,
-    userId: consent.userId,
-    purpose: consent.purpose,
-    acknowledged: consent.acknowledged,
-    version: consent.version,
-    createdAt: consent.createdAt,
-  };
-}
-
-function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
-  return {
-    id: exportRequest.id,
-    userId: exportRequest.userId,
-    status: exportRequest.status,
-    createdAt: exportRequest.createdAt,
-    completedAt: exportRequest.completedAt,
-  };
-}
-
-function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
-  return {
-    id: deletionRequest.id,
-    userId: deletionRequest.userId,
-    status: deletionRequest.status,
-    createdAt: deletionRequest.createdAt,
-    completedAt: deletionRequest.completedAt,
-  };
-}
-
-function toStoredUpload(upload: any): StoredUpload {
-  return {
-    id: upload.id,
-    ownerId: upload.ownerId,
-    purpose: upload.purpose,
-    fileName: upload.fileName,
-    mimeType: upload.mimeType,
-    fileSize: upload.fileSize,
-    status: upload.status,
-    uploadUrl: upload.uploadUrl,
-    createdAt: upload.createdAt,
-  };
-}
-
-function toStoredConsent(consent: any): StoredConsent {
-  return {
-    id: consent.id,
-    userId: consent.userId,
-    purpose: consent.purpose,
-    acknowledged: consent.acknowledged,
-    version: consent.version,
-    createdAt: consent.createdAt,
-  };
-}
-
-function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
-  return {
-    id: exportRequest.id,
-    userId: exportRequest.userId,
-    status: exportRequest.status,
-    createdAt: exportRequest.createdAt,
-    completedAt: exportRequest.completedAt,
-  };
-}
-
-function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
-  return {
-    id: deletionRequest.id,
-    userId: deletionRequest.userId,
-    status: deletionRequest.status,
-    createdAt: deletionRequest.createdAt,
-    completedAt: deletionRequest.completedAt,
-  };
-}
-
-function toStoredUpload(upload: any): StoredUpload {
-  return {
-    id: upload.id,
-    ownerId: upload.ownerId,
-    purpose: upload.purpose,
-    fileName: upload.fileName,
-    mimeType: upload.mimeType,
-    fileSize: upload.fileSize,
-    status: upload.status,
-    uploadUrl: upload.uploadUrl,
-    createdAt: upload.createdAt,
-  };
-}
-
-function toStoredConsent(consent: any): StoredConsent {
-  return {
-    id: consent.id,
-    userId: consent.userId,
-    purpose: consent.purpose,
-    acknowledged: consent.acknowledged,
-    version: consent.version,
-    createdAt: consent.createdAt,
-  };
-}
-
-function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
-  return {
-    id: exportRequest.id,
-    userId: exportRequest.userId,
-    status: exportRequest.status,
-    createdAt: exportRequest.createdAt,
-    completedAt: exportRequest.completedAt,
-  };
-}
-
-function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
-  return {
-    id: deletionRequest.id,
-    userId: deletionRequest.userId,
-    status: deletionRequest.status,
-    createdAt: deletionRequest.createdAt,
-    completedAt: deletionRequest.completedAt,
-  };
-}
-
-function toStoredUpload(upload: any): StoredUpload {
-  return {
-    id: upload.id,
-    ownerId: upload.ownerId,
-    purpose: upload.purpose,
-    fileName: upload.fileName,
-    mimeType: upload.mimeType,
-    fileSize: upload.fileSize,
-    status: upload.status,
-    uploadUrl: upload.uploadUrl,
-    createdAt: upload.createdAt,
-  };
-}
-
-function toStoredConsent(consent: any): StoredConsent {
-  return {
-    id: consent.id,
-    userId: consent.userId,
-    purpose: consent.purpose,
-    acknowledged: consent.acknowledged,
-    version: consent.version,
-    createdAt: consent.createdAt,
-  };
-}
-
-function toStoredDataExportRequest(exportRequest: any): DataExportRequest {
-  return {
-    id: exportRequest.id,
-    userId: exportRequest.userId,
-    status: exportRequest.status,
-    createdAt: exportRequest.createdAt,
-    completedAt: exportRequest.completedAt,
-  };
-}
-
-function toStoredDeletionRequest(deletionRequest: any): DeletionRequest {
-  return {
-    id: deletionRequest.id,
-    userId: deletionRequest.userId,
-    status: deletionRequest.status,
-    createdAt: deletionRequest.createdAt,
-    completedAt: deletionRequest.completedAt,
-  };
+function toRecord(value: Prisma.JsonValue | null): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
 }
