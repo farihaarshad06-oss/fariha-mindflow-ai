@@ -16,7 +16,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { app } from 'electron';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma';
 import log from 'electron-log/main';
 
 let _prisma: PrismaClient | null = null;
@@ -72,7 +72,7 @@ async function runMigrations(dbPath: string): Promise<void> {
     ? path.join(process.resourcesPath, 'prisma', 'schema.prisma')
     : path.join(__dirname, '..', '..', 'prisma', 'schema.prisma');
 
-  const prismaBin = resolvePrismaCli();
+  const prismaCliArgs = resolvePrismaCli();
   const dbExists = fs.existsSync(dbPath);
 
   // Back up the existing database before touching it so we can restore on failure
@@ -80,7 +80,7 @@ async function runMigrations(dbPath: string): Promise<void> {
   log.info('[db] Pre-migration backup:', backupPath ?? 'none (fresh database)');
 
   try {
-    execFileSync(prismaBin, ['migrate', 'deploy', '--schema', schemaPath], {
+    execFileSync(prismaCliArgs[0], [...prismaCliArgs.slice(1), 'migrate', 'deploy', '--schema', schemaPath], {
       env: {
         ...process.env,
         DESKTOP_DATABASE_URL: `file:${dbPath}`,
@@ -154,23 +154,37 @@ async function applySqlitePragmas(prisma: PrismaClient): Promise<void> {
 
 // ── Prisma CLI resolution ──────────────────────────────────────────────────
 
-function resolvePrismaCli(): string {
+/**
+ * Resolves the Prisma CLI for running `migrate deploy` at runtime.
+ *
+ * In development: uses the local node_modules/.bin/prisma binary.
+ * In the packaged app: the `prisma` npm package is included in the asar (under
+ * node_modules/prisma).  We invoke it via `node prisma/build/index.js` because
+ * the .bin symlinks are not available inside an asar archive.
+ *
+ * Returns [executable, ...leadingArgs] so the caller can prepend them.
+ */
+function resolvePrismaCli(): string[] {
+  // Development: local .bin symlink
+  const binName = process.platform === 'win32' ? 'prisma.cmd' : 'prisma';
   const localBin = path.join(
     process.cwd(),
     'node_modules',
     '.bin',
-    process.platform === 'win32' ? 'prisma.cmd' : 'prisma',
+    binName,
   );
-  if (fs.existsSync(localBin)) return localBin;
+  if (fs.existsSync(localBin)) return [localBin];
 
-  const packagedCli = path.join(
+  // Packaged app: call the prisma JS entry via node (works inside asar)
+  const asarPrismaJs = path.join(
     process.resourcesPath,
-    'app.asar.unpacked',
+    'app.asar',
     'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'prisma.cmd' : 'prisma',
+    'prisma',
+    'build',
+    'index.js',
   );
-  if (fs.existsSync(packagedCli)) return packagedCli;
+  if (fs.existsSync(asarPrismaJs)) return [process.execPath, asarPrismaJs];
 
   throw new Error('Prisma CLI not found for desktop migrations');
 }

@@ -5,7 +5,7 @@
 
 import { getPrisma } from './database';
 import log from 'electron-log/main';
-import type { Settings } from '@prisma/client';
+import type { Settings } from '../generated/prisma';
 
 export type SettingsUpdate = Partial<Omit<Settings, 'id' | 'updatedAt'>>;
 

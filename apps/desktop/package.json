@@ -1,8 +1,8 @@
 {
   "name": "@mindflow/desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
-  "description": "Fariha MindFlow AI — Desktop Application (Electron)",
+  "description": "Fariha MindFlow AI \u2014 Desktop Application (Electron)",
   "author": {
     "name": "Fariha MindFlow AI",
     "email": "support@mindflow.ai"
@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "concurrently -k \"pnpm --filter @mindflow/web dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build:electron": "node build-electron.mjs",
-    "build": "pnpm --filter @mindflow/web build && node build-electron.mjs && electron-builder",
+    "build": "pnpm --filter @mindflow/web build && node build-electron.mjs && node scripts/verify-prisma-package.mjs && electron-builder",
     "build:win": "pnpm build -- --win",
     "build:mac": "pnpm build -- --mac",
     "build:linux": "pnpm build -- --linux",
@@ -23,7 +23,8 @@
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
     "prisma:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
-    "clean": "rimraf dist-electron dist-app"
+    "clean": "rimraf dist-electron dist-app",
+    "verify:prisma": "node scripts/verify-prisma-package.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
@@ -48,7 +49,7 @@
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "appId": "ai.mindflow.fariha",
     "productName": "Fariha MindFlow AI",
-    "copyright": "Copyright © 2024 Fariha MindFlow AI",
+    "copyright": "Copyright \u00a9 2024 Fariha MindFlow AI",
     "directories": {
       "output": "dist-app",
       "buildResources": "assets"
@@ -56,16 +57,14 @@
     "files": [
       "dist-electron/**/*",
       "prisma/**/*",
-      "node_modules/.prisma/**/*",
-      "node_modules/@prisma/client/**/*",
       "node_modules/prisma/**/*",
       "node_modules/electron-log/**/*",
+      "node_modules/electron-updater/**/*",
       "node_modules/ffmpeg-static/**/*",
       "node_modules/nodejs-whisper/**/*"
     ],
     "asarUnpack": [
-      "node_modules/.prisma/**/*",
-      "node_modules/@prisma/client/runtime/**/*"
+      "dist-electron/*.node"
     ],
     "extraResources": [
       {
