@@ -68,8 +68,8 @@ describe('database.ts — no external process spawning', () => {
       'utf8',
     );
     expect(src).toContain('_prisma_migrations');
-    expect(src).toContain('$queryRawUnsafe');
-    expect(src).toContain('$executeRawUnsafe');
+    expect(src).toContain('DatabaseSync');
+    expect(src).toContain('sqlite.exec(');
   });
 
   it('uses process.resourcesPath/prisma/migrations for packaged mode', () => {
@@ -182,4 +182,3 @@ describe('database.ts — packaged migrations path', () => {
     expect(src).toContain("process.resourcesPath, 'prisma', 'migrations'");
   });
 });
-
