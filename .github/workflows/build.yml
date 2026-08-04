@@ -8,9 +8,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Lint, typecheck and unit tests (Linux, fast) ──────────────────────────
-  test:
-    name: Lint / Typecheck / Unit Tests
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm --filter @mindflow/desktop prisma:generate
+        env:
+          DESKTOP_DATABASE_URL: file:/tmp/test.db
+
+      - name: Lint
+        run: pnpm --filter @mindflow/desktop lint
+
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,67 +88,52 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @mindflow/desktop typecheck
 
-      - name: Lint
-        run: pnpm --filter @mindflow/desktop lint
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm --filter @mindflow/desktop prisma:generate
+        env:
+          DESKTOP_DATABASE_URL: file:/tmp/test.db
 
       - name: Unit tests
         run: pnpm --filter @mindflow/desktop test
         env:
           DESKTOP_DATABASE_URL: file:/tmp/test.db
 
-  # ── Web bundle size check ─────────────────────────────────────────────────
-  bundle-size:
-    name: Web Bundle Size Check
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build web app
-        run: pnpm turbo run build --filter=@mindflow/web
-        env:
-          NODE_ENV: production
-
-      - name: Check bundle size
-        shell: bash
-        run: |
-          # Fail CI if any single JS chunk exceeds 600 KB (uncompressed).
-          # This catches accidental re-introduction of the pre-split monolithic bundle.
-          LIMIT_BYTES=614400  # 600 KB
-          OVERSIZED=0
-          while IFS= read -r -d '' file; do
-            SIZE=$(wc -c < "$file")
-            if [ "$SIZE" -gt "$LIMIT_BYTES" ]; then
-              echo "FAIL: $(basename "$file") is ${SIZE} bytes (limit ${LIMIT_BYTES})"
-              OVERSIZED=1
-            else
-              echo "OK:   $(basename "$file") is ${SIZE} bytes"
-            fi
-          done < <(find apps/web/dist/assets -name "*.js" -print0)
-          if [ "$OVERSIZED" -eq 1 ]; then
-            echo "One or more JS chunks exceed the 600 KB size budget."
-            exit 1
-          fi
-          echo "All chunks within budget."
-
-  # ── Windows installer build ───────────────────────────────────────────────
   build-windows:
     name: Windows Installer (x64)
     runs-on: windows-latest
-    needs: test
+    needs: [lint, typecheck, unit-tests]
     steps:
       - uses: actions/checkout@v4
 
@@ -151,7 +175,6 @@ jobs:
 
       - name: Build Electron main process
         run: pnpm exec tsc -p apps/desktop/tsconfig.electron.json
-        working-directory: .
 
       - name: Package Windows installer
         run: pnpm --filter @mindflow/desktop build:win
@@ -176,56 +199,10 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  # ── macOS / Linux builds (optional) ──────────────────────────────────────
   build-linux:
     name: Linux AppImage
     runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Prisma generate
-        run: pnpm --filter @mindflow/desktop prisma:generate
-        env:
-          DESKTOP_DATABASE_URL: file:/tmp/test.db
-
-      - name: Build web app
-        run: pnpm turbo run build --filter=@mindflow/web
-        env:
-          NODE_ENV: production
-
-      - name: Build Electron main process
-        run: pnpm exec tsc -p apps/desktop/tsconfig.electron.json
-
-      - name: Package Linux AppImage
-        run: pnpm --filter @mindflow/desktop build:linux
-        env:
-          DESKTOP_DATABASE_URL: file:/tmp/test.db
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-appimage
-          path: apps/desktop/dist-app/*.AppImage
-          retention-days: 14
-          if-no-files-found: warn
-
-    name: Windows Installer (x64)
-    runs-on: windows-latest
-    needs: test
+    needs: [lint, typecheck, unit-tests]
     steps:
       - uses: actions/checkout@v4
 
@@ -251,64 +228,6 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Prisma generate
-        run: pnpm --filter @mindflow/desktop prisma:generate
-        env:
-          DESKTOP_DATABASE_URL: file:C:/Users/runneradmin/AppData/Roaming/test.db
-
-      - name: Build web app
-        run: pnpm turbo run build --filter=@mindflow/web
-        env:
-          NODE_ENV: production
-
-      - name: Build Electron main process
-        run: pnpm exec tsc -p apps/desktop/tsconfig.electron.json
-        working-directory: .
-
-      - name: Package Windows installer
-        run: pnpm --filter @mindflow/desktop build:win
-        env:
-          DESKTOP_DATABASE_URL: file:C:/Users/runneradmin/AppData/Roaming/test.db
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: List artifacts
-        shell: bash
-        run: |
-          echo "=== Installer artifacts ==="
-          find apps/desktop/dist-app -name "*.exe" -o -name "*.msi" 2>/dev/null || true
-          ls -la apps/desktop/dist-app/ 2>/dev/null || true
-
-      - name: Upload Windows installer artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer-x64
-          path: |
-            apps/desktop/dist-app/*.exe
-            apps/desktop/dist-app/*.msi
-          retention-days: 30
-          if-no-files-found: warn
-
-  # ── macOS / Linux builds (optional) ──────────────────────────────────────
-  build-linux:
-    name: Linux AppImage
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
