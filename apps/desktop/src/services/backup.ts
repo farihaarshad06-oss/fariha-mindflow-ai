@@ -177,7 +177,7 @@ export async function createBackup(opts: BackupOptions = {}): Promise<BackupResu
   // Export all data as JSON (portable, no SQLite binary format needed)
   const [
     courses, lectures, transcriptSegments, summaries, keyConcepts,
-    flashcards, quizzes, _quizQuestions, chatMessages, _backupRecords,
+    flashcards, quizzes, chatMessages,
   ] = await Promise.all([
     db.course.findMany(),
     db.lecture.findMany(),
@@ -186,9 +186,11 @@ export async function createBackup(opts: BackupOptions = {}): Promise<BackupResu
     db.keyConcept.findMany(),
     db.flashcard.findMany(),
     db.quiz.findMany({ include: { questions: true, attempts: { include: { answers: true } } } }),
-    db.quizQuestion.findMany(),
+    // quizQuestion rows are included via quiz.questions above — fetch separately only for backup completeness
+    db.quizQuestion.findMany().then(() => undefined),
     db.chatMessage.findMany(),
-    db.backupRecord.findMany({ take: 50 }),
+    // backupRecord history is not re-exported inside a backup to avoid circularity
+    db.backupRecord.findMany({ take: 50 }).then(() => undefined),
   ]);
 
   // Settings export — exclude secretKeyRef (no plaintext secrets)
@@ -206,7 +208,7 @@ export async function createBackup(opts: BackupOptions = {}): Promise<BackupResu
     exportedAt: new Date().toISOString(),
     settings: settingsExport,
     courses,
-    lectures: lectures.map(({ audioPath: _omit, ...l }) => l), // omit audio paths (platform-specific)
+    lectures: lectures.map(({ audioPath: _audioPath, ...l }) => l), // omit audio paths (platform-specific)
     transcriptSegments,
     summaries,
     keyConcepts,
@@ -514,7 +516,7 @@ export async function exportFullData(redactSensitive = true): Promise<string> {
     exportedAt: new Date().toISOString(),
     settings: safeSettings,
     courses,
-    lectures: redactSensitive ? lectures.map(({ audioPath: _omit, ...l }) => l) : lectures,
+    lectures: redactSensitive ? lectures.map(({ audioPath: _audioPath, ...l }) => l) : lectures,
     transcriptSegments,
     summaries,
     flashcards,

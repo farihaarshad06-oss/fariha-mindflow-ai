@@ -116,7 +116,7 @@ export async function generateSummary(lectureId: string): Promise<LectureSummary
 
   if (!providerId) {
     // Local extractive mode
-    summaryData = generateExtractiveSummary(segments.map((s) => s.editedText ?? s.text), lectureId);
+    summaryData = generateExtractiveSummary(segments.map((s) => s.editedText ?? s.text));
   } else {
     try {
       const result = await aiRequest({
@@ -148,7 +148,7 @@ Respond ONLY with a JSON object matching this exact structure:
       if (summaryData.sourceSegmentIds.length === 0) summaryData.sourceSegmentIds = sourceSegmentIds.slice(0, 5);
     } catch (err) {
       log.warn('[learning] AI summary failed, falling back to extractive:', err instanceof Error ? err.message : String(err));
-      summaryData = generateExtractiveSummary(segments.map((s) => s.editedText ?? s.text), lectureId);
+      summaryData = generateExtractiveSummary(segments.map((s) => s.editedText ?? s.text));
     }
   }
 
@@ -181,8 +181,7 @@ Respond ONLY with a JSON object matching this exact structure:
 }
 
 function generateExtractiveSummary(
-  texts: string[],
-  _lectureId: string
+  texts: string[]
 ): z.infer<typeof SummarySchema> {
   const joined = texts.join(' ');
   // Simple sentence extraction

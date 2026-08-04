@@ -62,7 +62,7 @@ vi.mock('../services/settings', () => ({
 
 // Needed for JobQueue which dynamically imports electron
 vi.mock('electron', () => ({
-  app: { getPath: (_key: string) => os.tmpdir(), isPackaged: false },
+  app: { getPath: (_k: string) => os.tmpdir(), isPackaged: false },
   safeStorage: { isEncryptionAvailable: () => false, encryptString: () => Buffer.from(''), decryptString: () => '' },
   BrowserWindow: { getAllWindows: () => [] },
 }));
