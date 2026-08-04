@@ -4,7 +4,7 @@
 
 import { getPrisma } from './database';
 import log from 'electron-log/main';
-import type { Course, Lecture } from '../generated/prisma';
+import type { Course, Lecture } from '@prisma/client';
 
 export const CourseService = {
   async list(): Promise<Course[]> {

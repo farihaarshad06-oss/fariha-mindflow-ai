@@ -16,7 +16,7 @@ import { getPrisma } from './database';
 import { aiRequest } from './aiProviders';
 import { TranscriptService } from './transcript';
 import { SettingsService } from './settings';
-import type { LectureSummary, Flashcard } from '../generated/prisma';
+import type { LectureSummary, Flashcard } from '@prisma/client';
 
 // ── Zod schemas for AI-generated structures ────────────────────────────────
 
