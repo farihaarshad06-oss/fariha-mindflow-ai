@@ -11,7 +11,7 @@ function expectDefined<T>(
 ): asserts value is T {
   assert(value !== null && value !== undefined, message);
 }
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma';
 import { JobQueue } from '../services/jobQueue';
 import { CourseService, LectureService } from '../services/courses';
 import { TranscriptService } from '../services/transcript';

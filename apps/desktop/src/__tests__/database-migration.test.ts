@@ -47,7 +47,7 @@ const mockPrismaExecuteRawUnsafe = vi.fn().mockResolvedValue(undefined);
 const mockPrismaConnect = vi.fn().mockResolvedValue(undefined);
 const mockPrismaDisconnect = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('@prisma/client', () => ({
+vi.mock('../generated/prisma', () => ({
   PrismaClient: vi.fn().mockImplementation(() => ({
     $executeRawUnsafe: mockPrismaExecuteRawUnsafe,
     $connect: mockPrismaConnect,

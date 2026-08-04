@@ -19,7 +19,7 @@ import log from 'electron-log/main';
 import { getPrisma } from './database';
 import { SettingsService } from './settings';
 import { JobQueue } from './jobQueue';
-import type { RecordingSession, AudioChunk } from '@prisma/client';
+import type { RecordingSession, AudioChunk } from '../generated/prisma';
 
 export const CHUNK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 const MIN_FREE_BYTES = 100 * 1024 * 1024; // 100 MB minimum free space
