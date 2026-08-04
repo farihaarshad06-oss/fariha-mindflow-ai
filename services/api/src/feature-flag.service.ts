@@ -1,31 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { env } from './core/env';
 
 @Injectable()
 export class FeatureFlagService {
-  private readonly flags: Map<string, boolean> = new Map();
+  private readonly flags = new Map<string, boolean>();
 
-  constructor(private readonly config: ConfigService) {
-    this.loadFlagsFromConfig();
-  }
-
-  private loadFlagsFromConfig(): void {
-    // In a real implementation, these would come from environment variables or a database
-    // For now, we'll use configuration from the ConfigService
-    const flags = {
-      'real-ai-provider': this.config.get<boolean>('FEATURE_FLAG_REAL_AI', false),
-      'real-transcription': this.config.get<boolean>('FEATURE_FLAG_REAL_TRANSCRIPTION', false),
-      'mind-maps': this.config.get<boolean>('FEATURE_FLAG_MIND_MAPS', false),
-      'teacher-portal': this.config.get<boolean>('FEATURE_FLAG_TEACHER_PORTAL', false),
-      'push-notifications': this.config.get<boolean>('FEATURE_FLAG_PUSH_NOTIFICATIONS', false),
-      'production-billing': this.config.get<boolean>('FEATURE_FLAG_PRODUCTION_BILLING', false),
-      'image-understanding': this.config.get<boolean>('FEATURE_FLAG_IMAGE_UNDERSTANDING', false),
-      'voice-conversation': this.config.get<boolean>('FEATURE_FLAG_VOICE_CONVERSATION', false),
-    };
-
-    flags.forEach((value, key) => {
-      this.flags.set(key, value);
-    });
+  constructor() {
+    this.flags.set('real-ai-provider', env.FEATURE_REAL_AI_PROVIDER);
+    this.flags.set('real-transcription', env.FEATURE_REAL_TRANSCRIPTION);
+    this.flags.set('mind-maps', env.FEATURE_MIND_MAPS);
+    this.flags.set('teacher-portal', env.FEATURE_TEACHER_PORTAL);
+    this.flags.set('push-notifications', env.FEATURE_PUSH_NOTIFICATIONS);
   }
 
   isEnabled(flagName: string): boolean {
@@ -36,6 +21,7 @@ export class FeatureFlagService {
     this.flags.set(flagName, enabled);
   }
 
-  getAllFlags(): Map<string, boolean> {
-    return this.flags;
+  getAllFlags(): Record<string, boolean> {
+    return Object.fromEntries(this.flags.entries());
   }
+}

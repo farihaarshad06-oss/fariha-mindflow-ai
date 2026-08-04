@@ -8,6 +8,7 @@ import {
   AuditRepository,
   UploadRepository,
   ConsentRepository,
+  PrismaService,
 } from './repositories';
 import { LoggerService } from './logger.service';
 import { PasswordService } from './password.service';
@@ -18,6 +19,7 @@ import { UsageService } from './usage.service';
 @Global()
 @Module({
   providers: [
+    PrismaService,
     UsersRepository,
     CoursesRepository,
     LecturesRepository,
@@ -33,6 +35,7 @@ import { UsageService } from './usage.service';
     UsageService,
   ],
   exports: [
+    PrismaService,
     UsersRepository,
     CoursesRepository,
     LecturesRepository,
