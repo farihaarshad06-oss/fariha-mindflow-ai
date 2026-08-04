@@ -49,7 +49,7 @@ function wrap<T>(fn: () => Promise<IpcResult<T>>): Promise<IpcResult<T>> {
   return fn().catch((e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     // Redact any potential path information
-    const safe = msg.replace(/([A-Za-z]:[\\\/][^\s,]+)/g, '[PATH]').replace(/(\/[^\s,]+)/g, '[PATH]');
+    const safe = msg.replace(/([A-Za-z]:[/\\][^\s,]+)/g, '[PATH]').replace(/(\/[^\s,]+)/g, '[PATH]');
     log.error('[ipc] Unhandled error:', safe);
     return err(safe);
   });
