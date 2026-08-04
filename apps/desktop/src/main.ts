@@ -72,6 +72,14 @@ function createWindow(): void {
 
   // Open external links in OS browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        return { action: 'deny' };
+      }
+    } catch {
+      return { action: 'deny' };
+    }
     void shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -137,4 +145,3 @@ app.on('before-quit', async () => {
   WhisperWorker.stop();
   await closeDatabase();
 });
-

@@ -80,17 +80,23 @@ export const TranscriptService = {
 
     try {
       // Build raw SQL with optional filters
-      const params: (string | number)[] = [query, limit];
+      const clauses: string[] = ['TranscriptFts MATCH ?'];
+      const params: (string | number)[] = [query];
+
+      if (opts?.lectureId) {
+        clauses.push('s.lectureId = ?');
+        params.push(opts.lectureId);
+      }
 
       const rows = await db.$queryRawUnsafe<FtsRow[]>(
         `SELECT fts.segmentId, fts.lectureId, fts.text, bm25(TranscriptFts) AS rank
          FROM TranscriptFts fts
          JOIN TranscriptSegment s ON s.id = fts.segmentId
-         WHERE TranscriptFts MATCH ?
-         ${opts?.lectureId ? 'AND s.lectureId = ?' : ''}
+         WHERE ${clauses.join(' AND ')}
          ORDER BY rank
          LIMIT ?`,
-        ...params
+        ...params,
+        limit
       );
 
       return rows;
