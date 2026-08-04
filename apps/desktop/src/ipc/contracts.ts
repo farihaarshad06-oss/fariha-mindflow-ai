@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import path from 'node:path';
 
 // ── Channel names ──────────────────────────────────────────────────────────
 
@@ -242,7 +243,7 @@ export function err(error: string, code?: string): IpcErr {
  * Throws if the resolved path escapes the root (path traversal prevention).
  */
 export function assertSafePath(filePath: string, rootDir: string): string {
-  const { resolve, sep } = require('node:path') as typeof import('node:path');
+  const { resolve, sep } = path;
   const resolved = resolve(filePath);
   const root = resolve(rootDir) + sep;
   if (!resolved.startsWith(root) && resolved !== resolve(rootDir)) {

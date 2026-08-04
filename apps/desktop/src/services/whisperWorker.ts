@@ -27,7 +27,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { BrowserWindow, app } from 'electron';
 import log from 'electron-log/main';
 import { getPrisma } from './database';
@@ -40,7 +40,6 @@ import { SettingsService } from './settings';
 
 const POLL_INTERVAL_MS = 3_000;
 const JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 min per chunk
-const MAX_WAV_DURATION_MS = 10 * 60 * 1000; // safety cap
 
 // ── Active job cancellation ────────────────────────────────────────────────
 
@@ -88,7 +87,7 @@ function getFfmpegPath(): string | null {
   if (_ffmpegPath !== undefined) return _ffmpegPath;
   // Try ffmpeg-static package first
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ffmpegStatic = require('ffmpeg-static') as string | null;
     if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
       _ffmpegPath = ffmpegStatic;
@@ -98,7 +97,6 @@ function getFfmpegPath(): string | null {
   // Try system ffmpeg
   for (const candidate of ['ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']) {
     try {
-      const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
       execFileSync(candidate, ['-version'], { stdio: 'pipe', timeout: 3000 });
       _ffmpegPath = candidate;
       return _ffmpegPath;
@@ -164,7 +162,7 @@ function getWhisperBin(): string | null {
 
   // 2. nodejs-whisper package bundled binary
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pkg = require('nodejs-whisper') as { WHISPER_CPP_BINARY?: string };
     if (pkg.WHISPER_CPP_BINARY && fs.existsSync(pkg.WHISPER_CPP_BINARY)) {
       _whisperBin = pkg.WHISPER_CPP_BINARY;
@@ -175,7 +173,6 @@ function getWhisperBin(): string | null {
   // 3. System PATH (dev environment)
   for (const name of ['whisper-cli', 'whisper', 'main']) {
     try {
-      const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
       execFileSync(name, ['--help'], { stdio: 'pipe', timeout: 3000 });
       _whisperBin = name;
       return _whisperBin;
@@ -328,7 +325,7 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
   }, JOB_TIMEOUT_MS);
 
   let wavPath: string | null = null;
-  let chunkId: string | null = audioChunkId ?? null;
+  const chunkId: string | null = audioChunkId ?? null;
 
   try {
     broadcast('job:progress', { jobId, status: 'RUNNING', pct: 0, lectureId });
@@ -493,7 +490,7 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
       await JobQueue.fail(jobId, 'CANCELLED', 'Transcription cancelled');
       broadcast('job:progress', { jobId, lectureId, status: 'CANCELLED' });
     } else {
-      const safeMsg = msg.replace(/([A-Za-z]:[\\\/][^\s,]+)/g, '[PATH]').replace(/(\/[^\s,]+)/g, '[PATH]');
+      const safeMsg = msg.replace(/([A-Za-z]:[/\\][^\s,]+)/g, '[PATH]').replace(/(\/[^\s,]+)/g, '[PATH]');
       await JobQueue.fail(jobId, code, safeMsg.slice(0, 256));
       broadcast('job:progress', { jobId, lectureId, status: 'FAILED', error: code, message: safeMsg.slice(0, 256) });
     }
