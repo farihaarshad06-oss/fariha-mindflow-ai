@@ -128,6 +128,14 @@ beforeEach(async () => {
 // ── Whisper Worker ─────────────────────────────────────────────────────────
 
 describe('WhisperWorker', () => {
+  afterEach(async () => {
+    // Always stop the worker after each test to clear the polling timer and
+    // prevent an in-flight tick() from holding the process open after
+    // prisma.$disconnect() is called in afterAll.
+    const { WhisperWorker } = await import('../services/whisperWorker');
+    WhisperWorker.stop();
+  });
+
   it('starts and stops without error', async () => {
     const { WhisperWorker } = await import('../services/whisperWorker');
     WhisperWorker.start();
