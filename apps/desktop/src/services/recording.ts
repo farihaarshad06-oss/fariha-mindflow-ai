@@ -15,7 +15,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { app } from 'electron';
 import log from 'electron-log/main';
 import { getPrisma } from './database';
 import { SettingsService } from './settings';
@@ -43,7 +42,7 @@ async function checkDiskSpace(dir: string): Promise<{ freeBytes: number; ok: boo
       const drive = path.parse(dir).root.replace(/\\/g, '');
       const out = execSync(`wmic logicaldisk where "DeviceID='${drive}'" get FreeSpace /format:value`, { timeout: 3000 }).toString();
       const match = /FreeSpace=(\d+)/.exec(out);
-      const freeBytes = match ? parseInt(match[1]!, 10) : 0;
+      const freeBytes = match ? parseInt(match[1] ?? '0', 10) : 0;
       return { freeBytes, ok: freeBytes >= MIN_FREE_BYTES };
     } else {
       const { statfsSync } = fs as typeof fs & { statfsSync?: (p: string) => { bfree: number; bsize: number } };

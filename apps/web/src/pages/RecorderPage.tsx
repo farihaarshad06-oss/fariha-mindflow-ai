@@ -95,7 +95,7 @@ export function RecorderPage() {
         .map((d) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${d.deviceId.slice(0, 6)}` }));
       setMics(audioInputs);
       if (audioInputs.length > 0 && !selectedMic) {
-        setSelectedMic(audioInputs[0]!.deviceId);
+        setSelectedMic(audioInputs[0]?.deviceId ?? '');
       }
     });
   }, []);
@@ -226,7 +226,7 @@ export function RecorderPage() {
         analyser.fftSize = 256;
         source.connect(analyser);
         analyserRef.current = analyser;
-      } catch {}
+      } catch { /* analyser setup optional */ }
 
       // Create a persistent session in main process
       let newSessionId: string | null = null;

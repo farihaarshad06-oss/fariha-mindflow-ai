@@ -5,7 +5,14 @@
  * External HTTP and child_process calls are mocked.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi, assert } from 'vitest';
+
+function expectDefined<T>(
+  value: T | null | undefined,
+  message = 'Expected value to be defined',
+): asserts value is T {
+  assert(value !== null && value !== undefined, message);
+}
 import { PrismaClient } from '../generated/prisma';
 import path from 'node:path';
 import os from 'node:os';
@@ -146,7 +153,8 @@ describe('WhisperWorker', () => {
     expect(job?.jobType).toBe('TRANSCRIBE');
     expect(job?.status).toBe('PENDING');
 
-    const payload = JSON.parse(job!.payload) as { lectureId: string };
+    expectDefined(job);
+    const payload = JSON.parse(job.payload) as { lectureId: string };
     expect(payload.lectureId).toBe(lecture.id);
 
     await JobQueue.cancel(jobId);
@@ -255,8 +263,10 @@ describe('Usage limits', () => {
 
     const events = await prisma.aiUsageEvent.findMany({ where: { provider: 'openai' } });
     expect(events.length).toBe(1);
-    expect(events[0]!.inputTokens).toBe(1000);
-    expect(events[0]!.estimatedCostCents).toBe(2);
+    const event = events[0];
+    expectDefined(event);
+    expect(event.inputTokens).toBe(1000);
+    expect(event.estimatedCostCents).toBe(2);
   });
 
   it('caches AI responses and retrieves them', async () => {
@@ -278,7 +288,8 @@ describe('Usage limits', () => {
     expect(cached).not.toBeNull();
     expect(cached?.hitCount).toBe(0);
 
-    const data = JSON.parse(cached!.responseJson) as { flashcards: unknown[] };
+    expectDefined(cached);
+    const data = JSON.parse(cached.responseJson) as { flashcards: unknown[] };
     expect(data.flashcards.length).toBe(1);
   });
 });

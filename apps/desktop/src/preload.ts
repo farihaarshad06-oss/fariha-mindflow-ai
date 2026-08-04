@@ -12,8 +12,6 @@ import type { IpcResult } from './ipc/contracts';
  * - All inputs validated in main-process handlers before reaching services
  */
 
-type Fn<T = unknown> = (...args: T[]) => Promise<IpcResult<unknown>>;
-
 function invoke(channel: string, ...args: unknown[]): Promise<IpcResult<unknown>> {
   return ipcRenderer.invoke(channel, ...args) as Promise<IpcResult<unknown>>;
 }

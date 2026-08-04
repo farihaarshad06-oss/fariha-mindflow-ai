@@ -228,7 +228,7 @@ export async function generateFlashcards(lectureId: string, courseId?: string): 
       try {
         const defs = JSON.parse(summary.definitions) as Array<{ term: string; definition: string }>;
         newCards = defs.map((d) => ({ question: `What is ${d.term}?`, answer: d.definition, difficulty: 2 }));
-      } catch {}
+      } catch { /* invalid JSON in definitions — skip */ }
     }
   } else {
     try {
@@ -420,7 +420,7 @@ export async function generateWeeklyQuiz(courseId: string, weekStart: Date): Pro
     // Generate simple true/false questions from flashcards
     quizData = {
       title: `Weekly Quiz - Week of ${weekStart.toLocaleDateString()}`,
-      questions: flashcards.slice(0, 5).map((f, i) => ({
+      questions: flashcards.slice(0, 5).map((f) => ({
         questionType: 'TF' as const,
         text: `True or False: ${f.question} — ${f.answer}`,
         options: [],

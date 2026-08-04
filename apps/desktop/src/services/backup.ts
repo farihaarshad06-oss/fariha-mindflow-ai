@@ -44,16 +44,6 @@ function getExportDir(): string {
   return dir;
 }
 
-function sha256File(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
-    const stream = fs.createReadStream(filePath);
-    stream.on('data', (d) => hash.update(d));
-    stream.on('end', () => resolve(hash.digest('hex')));
-    stream.on('error', reject);
-  });
-}
-
 // ── Simple ZIP writer (no native dependencies required) ────────────────────
 // Uses Node.js built-in zlib for DEFLATE compression
 
@@ -133,7 +123,9 @@ function crc32(buf: Buffer): number {
   let crc = 0xffffffff;
   const table = getCrc32Table();
   for (let i = 0; i < buf.length; i++) {
-    crc = (crc >>> 8) ^ table[(crc ^ buf[i]!) & 0xff]!;
+    const byte = buf[i] ?? 0;
+    const tableEntry = table[(crc ^ byte) & 0xff] ?? 0;
+    crc = (crc >>> 8) ^ tableEntry;
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
@@ -185,7 +177,7 @@ export async function createBackup(opts: BackupOptions = {}): Promise<BackupResu
   // Export all data as JSON (portable, no SQLite binary format needed)
   const [
     courses, lectures, transcriptSegments, summaries, keyConcepts,
-    flashcards, quizzes, quizQuestions, chatMessages, backupRecords,
+    flashcards, quizzes, _quizQuestions, chatMessages, _backupRecords,
   ] = await Promise.all([
     db.course.findMany(),
     db.lecture.findMany(),
@@ -240,7 +232,7 @@ export async function createBackup(opts: BackupOptions = {}): Promise<BackupResu
           const sha = crypto.createHash('sha256').update(buf).digest('hex');
           entries.push({ name: `audio/${file}`, data: buf });
           audioEntries.push({ name: file, sha256: sha, sizeBytes: buf.length });
-        } catch (e) {
+        } catch {
           log.warn('[backup] Could not read audio file:', file);
         }
       }
