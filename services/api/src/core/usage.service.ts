@@ -12,12 +12,12 @@ export interface UsageTotals {
 export class UsageService {
   constructor(private readonly repository: UsageRepository) {}
 
-  record(input: Omit<UsageEvent, 'id' | 'recordedAt'>): UsageEvent {
+  async record(input: Omit<UsageEvent, 'id' | 'recordedAt'>): Promise<UsageEvent> {
     return this.repository.create(input);
   }
 
-  totals(): UsageTotals {
-    const events = this.repository.list();
+  async totals(): Promise<UsageTotals> {
+    const events = await this.repository.list();
     return {
       transcriptionMinutes: events
         .filter((e) => e.kind === 'TRANSCRIPTION_MINUTES')
@@ -29,7 +29,7 @@ export class UsageService {
     };
   }
 
-  list(): UsageEvent[] {
+  async list(): Promise<UsageEvent[]> {
     return this.repository.list();
   }
 }

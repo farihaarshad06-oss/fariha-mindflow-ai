@@ -6,7 +6,7 @@ import { AuditService } from '../core/audit.service';
 export class AuditLogsService {
   constructor(private readonly audit: AuditService) {}
 
-  list(): AuditLog[] {
+  async list(): Promise<AuditLog[]> {
     return this.audit.list();
   }
 }

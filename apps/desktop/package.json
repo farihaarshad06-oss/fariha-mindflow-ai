@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Fariha MindFlow AI — Desktop Application (Electron)",
-  "author": "Fariha MindFlow AI",
+  "author": {
+    "name": "Fariha MindFlow AI",
+    "email": "support@mindflow.ai"
+  },
+  "homepage": "https://github.com/farihaarshad06-oss/fariha-mindflow-ai",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"pnpm --filter @mindflow/web dev\" \"wait-on http://localhost:5173 && electron .\"",
@@ -27,6 +31,7 @@
     "wait-on": "^8.0.1"
   },
   "build": {
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "appId": "ai.mindflow.fariha",
     "productName": "Fariha MindFlow AI",
     "copyright": "Copyright © 2024 Fariha MindFlow AI",
@@ -88,7 +93,8 @@
         }
       ],
       "icon": "assets/icon.png",
-      "category": "Education"
+      "category": "Education",
+      "maintainer": "Fariha MindFlow AI <support@mindflow.ai>"
     },
     "nsis": {
       "oneClick": false,

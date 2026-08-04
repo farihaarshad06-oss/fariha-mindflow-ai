@@ -6,15 +6,16 @@ import { ProcessingJobsRepository } from '../core/repositories';
 export class ProcessingJobsService {
   constructor(private readonly jobs: ProcessingJobsRepository) {}
 
-  list(): ProcessingJob[] {
-    return this.jobs.list().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  async list(): Promise<ProcessingJob[]> {
+    const jobs = await this.jobs.list();
+    return jobs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
 
-  getById(id: string): ProcessingJob | undefined {
+  async getById(id: string): Promise<ProcessingJob | undefined> {
     return this.jobs.findById(id);
   }
 
-  create(input: Omit<ProcessingJob, 'id' | 'createdAt' | 'updatedAt'>): ProcessingJob {
+  async create(input: Omit<ProcessingJob, 'id' | 'createdAt' | 'updatedAt'>): Promise<ProcessingJob> {
     return this.jobs.create(input);
   }
 }
