@@ -97,7 +97,7 @@ jobs:
           DESKTOP_DATABASE_URL: file:C:/Users/runneradmin/AppData/Roaming/test.db
 
       - name: Build web app
-        run: pnpm --filter @mindflow/web build
+        run: pnpm turbo run build --filter=@mindflow/web
         env:
           NODE_ENV: production
 
@@ -155,7 +155,7 @@ jobs:
           DESKTOP_DATABASE_URL: file:/tmp/test.db
 
       - name: Build web app
-        run: pnpm --filter @mindflow/web build
+        run: pnpm turbo run build --filter=@mindflow/web
         env:
           NODE_ENV: production
 
