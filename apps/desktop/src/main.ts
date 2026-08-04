@@ -1,10 +1,7 @@
 import { app, BrowserWindow, shell, dialog, ipcMain, protocol } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
-// ESM shim for __dirname in CommonJS compiled output
-const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ── Constants ──────────────────────────────────────────────────────────────
