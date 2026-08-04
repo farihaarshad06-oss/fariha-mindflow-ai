@@ -1,0 +1,350 @@
+// Fariha MindFlow AI — Desktop SQLite schema
+// Local-first: no cloud, no Docker, no PostgreSQL required.
+// All data stored in user's app-data directory.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DESKTOP_DATABASE_URL")
+}
+
+// ── Settings & profile ────────────────────────────────────────────────────
+
+model Settings {
+  id                    String   @id @default("default")
+  preferredLanguage     String   @default("en")
+  theme                 String   @default("system")
+  audioRetentionDays    Int      @default(90)
+  recordingConsentGiven Boolean  @default(false)
+  onboardingComplete    Boolean  @default(false)
+  storagePath           String?
+  whisperModelId        String?
+  defaultAiProvider     String?
+  aiMode                String   @default("local") // "local" | "cloud" | "hybrid"
+  dailyTokenLimit       Int      @default(50000)
+  monthlyTokenLimit     Int      @default(500000)
+  dailyCostLimitCents   Int      @default(500)
+  monthlyCostLimitCents Int      @default(5000)
+  quizDayOfWeek         Int      @default(0) // 0=Sunday
+  privacyModeDefault    Boolean  @default(false)
+  updatedAt             DateTime @updatedAt
+}
+
+// ── Courses ───────────────────────────────────────────────────────────────
+
+model Course {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?
+  color        String?
+  nextExamDate DateTime?
+  progress     Int       @default(0)
+  weakTopics   String    @default("[]") // JSON array
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  lectures Lecture[]
+}
+
+// ── Lectures ──────────────────────────────────────────────────────────────
+
+model Lecture {
+  id              String   @id @default(cuid())
+  courseId        String?
+  title           String
+  state           String   @default("PENDING") // PENDING|RECORDING|PROCESSING|READY|ERROR
+  durationSeconds Int?
+  audioPath       String? // path to assembled audio file
+  language        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  course             Course?             @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  recordingSession   RecordingSession?
+  audioChunks        AudioChunk[]
+  transcriptSegments TranscriptSegment[]
+  summary            LectureSummary?
+  keyConcepts        KeyConcept[]
+  flashcards         Flashcard[]
+}
+
+// ── Recording sessions & chunks ───────────────────────────────────────────
+
+model RecordingSession {
+  id              String    @id @default(cuid())
+  lectureId       String    @unique
+  microphoneId    String?
+  microphoneName  String?
+  state           String    @default("ACTIVE") // ACTIVE|PAUSED|STOPPED|CRASHED|RECOVERED
+  privacyMode     Boolean   @default(false)
+  totalDurationMs Int       @default(0)
+  chunkCount      Int       @default(0)
+  startedAt       DateTime  @default(now())
+  pausedAt        DateTime?
+  stoppedAt       DateTime?
+  crashedAt       DateTime?
+  recoveredAt     DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  lecture Lecture      @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+  chunks  AudioChunk[]
+}
+
+model AudioChunk {
+  id            String    @id @default(cuid())
+  sessionId     String
+  lectureId     String
+  index         Int
+  filePath      String
+  fileSizeBytes Int       @default(0)
+  durationMs    Int       @default(0)
+  startOffsetMs Int       @default(0)
+  state         String    @default("RECORDING") // RECORDING|COMPLETE|ERROR|DELETED
+  checksum      String? // SHA-256 hex for integrity
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  session RecordingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  lecture Lecture          @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, index])
+}
+
+// ── Transcription ─────────────────────────────────────────────────────────
+
+model TranscriptSegment {
+  id             String   @id @default(cuid())
+  lectureId      String
+  segmentIndex   Int
+  speaker        String?
+  text           String
+  editedText     String? // user-edited version; null means use text
+  timestampStart Float
+  timestampEnd   Float
+  confidence     Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+
+  @@unique([lectureId, segmentIndex])
+}
+
+// ── Summaries & key concepts ──────────────────────────────────────────────
+
+model LectureSummary {
+  id                String   @id @default(cuid())
+  lectureId         String   @unique
+  content           String
+  keyPoints         String   @default("[]") // JSON string[]
+  definitions       String   @default("[]") // JSON {term,definition}[]
+  unclearTopics     String   @default("[]") // JSON string[]
+  reviewSuggestions String   @default("[]") // JSON string[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+}
+
+model KeyConcept {
+  id          String   @id @default(cuid())
+  lectureId   String
+  label       String
+  description String
+  createdAt   DateTime @default(now())
+
+  lecture Lecture @relation(fields: [lectureId], references: [id], onDelete: Cascade)
+}
+
+// ── Flashcards ────────────────────────────────────────────────────────────
+
+model Flashcard {
+  id             String    @id @default(cuid())
+  lectureId      String?
+  courseId       String?
+  question       String
+  answer         String
+  difficulty     Int       @default(1) // 1–5
+  // Spaced repetition (SM-2 inspired)
+  easeFactor     Float     @default(2.5)
+  intervalDays   Int       @default(1)
+  repetitions    Int       @default(0)
+  nextReviewDate DateTime  @default(now())
+  lastReviewDate DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lecture Lecture? @relation(fields: [lectureId], references: [id], onDelete: SetNull)
+}
+
+// ── Quizzes ───────────────────────────────────────────────────────────────
+
+model Quiz {
+  id           String    @id @default(cuid())
+  title        String
+  courseId     String?
+  weekStart    DateTime?
+  state        String    @default("PENDING") // PENDING|ACTIVE|COMPLETED
+  score        Int? // 0–100
+  totalPoints  Int       @default(0)
+  earnedPoints Int       @default(0)
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+}
+
+model QuizQuestion {
+  id               String  @id @default(cuid())
+  quizId           String
+  questionType     String // MC|TF|WRITTEN
+  text             String
+  options          String  @default("[]") // JSON string[] for MC
+  correctAnswer    String
+  explanation      String?
+  points           Int     @default(1)
+  sourceSegmentIds String  @default("[]") // JSON string[] — transcript segment refs
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+}
+
+model QuizAttempt {
+  id          String    @id @default(cuid())
+  quizId      String
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  score       Int?
+
+  quiz    Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers QuizAnswer[]
+}
+
+model QuizAnswer {
+  id           String   @id @default(cuid())
+  attemptId    String
+  questionId   String
+  answer       String
+  isCorrect    Boolean?
+  pointsEarned Int      @default(0)
+  feedback     String?
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+}
+
+// ── Whisper models ────────────────────────────────────────────────────────
+
+model WhisperModel {
+  id              String    @id // e.g. "tiny", "base", "small", "medium", "large-v3"
+  name            String
+  sizeBytes       Int
+  downloadUrl     String
+  sha256          String // expected hash for integrity
+  localPath       String? // null = not downloaded
+  state           String    @default("AVAILABLE") // AVAILABLE|DOWNLOADING|READY|ERROR
+  downloadedBytes Int       @default(0)
+  downloadedAt    DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// ── AI Providers (config only; secrets stored in OS keychain) ────────────
+
+model AiProvider {
+  id           String    @id @default(cuid())
+  providerType String // openai|azure|gemini|ollama|lmstudio|openai-compat
+  displayName  String
+  enabled      Boolean   @default(false)
+  isDefault    Boolean   @default(false)
+  baseUrl      String?
+  modelRouting String    @default("{}") // JSON {economy,balanced,quality} model IDs
+  // secretKey is NOT stored here — stored in OS safeStorage
+  // secretKeyRef is a short opaque identifier used to look up from keychain
+  secretKeyRef String?
+  lastTestedAt DateTime?
+  lastTestOk   Boolean?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+// ── AI Usage ──────────────────────────────────────────────────────────────
+
+model AiUsageEvent {
+  id                 String   @id @default(cuid())
+  provider           String
+  model              String
+  operation          String // transcription|chat|summary|flashcard|quiz|cleanup
+  inputTokens        Int      @default(0)
+  outputTokens       Int      @default(0)
+  estimatedCostCents Int      @default(0)
+  cacheHit           Boolean  @default(false)
+  requestHash        String? // for deduplication
+  lectureId          String?
+  courseId           String?
+  createdAt          DateTime @default(now())
+}
+
+model AiRequestCache {
+  requestHash  String   @id
+  provider     String
+  model        String
+  operation    String
+  responseJson String // compressed/stored response
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  hitCount     Int      @default(0)
+}
+
+// ── Job queue ─────────────────────────────────────────────────────────────
+
+model ProcessingJob {
+  id               String    @id @default(cuid())
+  jobType          String // TRANSCRIBE|SUMMARIZE|FLASHCARDS|QUIZ|CLEANUP|SEARCH_INDEX
+  status           String    @default("PENDING") // PENDING|RUNNING|DONE|FAILED|CANCELLED
+  priority         Int       @default(5)
+  payload          String    @default("{}") // JSON
+  retryCount       Int       @default(0)
+  maxRetries       Int       @default(3)
+  errorCode        String?
+  safeErrorMessage String?
+  lockedBy         String? // worker ID
+  lockedAt         DateTime?
+  scheduledAfter   DateTime  @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+// ── FTS5 search ───────────────────────────────────────────────────────────
+// FTS5 virtual table is created via raw SQL migration — Prisma handles regular tables.
+
+// ── Backup / export metadata ──────────────────────────────────────────────
+
+model BackupRecord {
+  id            String   @id @default(cuid())
+  filePath      String
+  fileSizeBytes Int
+  sha256        String
+  includeAudio  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+// ── Chat history (local grounded chat) ───────────────────────────────────
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  courseId    String?
+  role        String // user|assistant
+  content     String
+  citationIds String   @default("[]") // JSON string[] of TranscriptSegment IDs
+  createdAt   DateTime @default(now())
+}

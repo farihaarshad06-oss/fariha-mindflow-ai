@@ -1,14 +1,32 @@
-import { app, BrowserWindow, shell, dialog, ipcMain, protocol } from 'electron';
+import { app, BrowserWindow, shell, dialog, protocol } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import log from 'electron-log/main';
+import { initDatabase, closeDatabase } from './services/database';
+import { registerAllHandlers } from './ipc/handlers';
+import { RecordingService } from './services/recording';
+import { JobQueue } from './services/jobQueue';
+import { WhisperModelManager } from './services/whisperModels';
+import { SettingsService } from './services/settings';
 
-const __dirname = path.dirname(__filename);
+// ── Logging ────────────────────────────────────────────────────────────────
+log.initialize();
+log.transports.file.level = 'info';
+log.transports.console.level = 'debug';
+
+// Redact potential secrets from logs
+log.transports.file.transforms.push((msg) => {
+  const parts = msg.data.map((d: unknown) => {
+    if (typeof d !== 'string') return d;
+    return d.replace(/Bearer\s+\S+/gi, '******')
+            .replace(/"(key|secret|token|password|apiKey)"\s*:\s*"[^"]+"/gi, '"$1":"[REDACTED]"');
+  });
+  return { ...msg, data: parts };
+});
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const isDev = !app.isPackaged;
-const WEB_DEV_URL = 'http://localhost:5173';
 
-// In production the web build is embedded as an extraResource under `web/`
 function resolveWebRoot(): string {
   return path.join(process.resourcesPath, 'web');
 }
@@ -26,24 +44,23 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 800,
+    minWidth: 900,
     minHeight: 600,
     title: 'Fariha MindFlow AI',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // Allow local file access for audio playback when offline
-      webSecurity: !isDev,
+      sandbox: true,
+      webSecurity: true,
     },
     show: false,
   });
 
   if (isDev) {
-    mainWindow.loadURL(WEB_DEV_URL);
+    mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    // Register a custom protocol so the web app can load relative assets
     const webRoot = resolveWebRoot();
     mainWindow.loadFile(path.join(webRoot, 'index.html'));
   }
@@ -52,7 +69,7 @@ function createWindow(): void {
     mainWindow?.show();
   });
 
-  // Open external links in the OS default browser, not in Electron
+  // Open external links in OS browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: 'deny' };
@@ -64,8 +81,7 @@ function createWindow(): void {
 }
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
-app.whenReady().then(() => {
-  // Register file:// protocol with correct MIME types for the web build
+app.whenReady().then(async () => {
   if (!isDev) {
     protocol.registerFileProtocol('file', (request, callback) => {
       const filePath = decodeURIComponent(request.url.replace('file:///', ''));
@@ -73,7 +89,28 @@ app.whenReady().then(() => {
     });
   }
 
-  createWindow();
+  try {
+    log.info('[main] Initialising database...');
+    await initDatabase();
+
+    log.info('[main] Registering IPC handlers...');
+    registerAllHandlers();
+
+    log.info('[main] Running startup recovery...');
+    await RecordingService.recoverCrashedSessions();
+    await JobQueue.recoverStalledJobs();
+    await WhisperModelManager.ensureDefaults();
+
+    log.info('[main] Applying settings...');
+    await SettingsService.get(); // ensure defaults exist
+
+    createWindow();
+    log.info('[main] Ready');
+  } catch (err) {
+    log.error('[main] Startup error:', err instanceof Error ? err.message : String(err));
+    dialog.showErrorBox('Startup Error', `Failed to initialise MindFlow AI:\n${err instanceof Error ? err.message : String(err)}`);
+    app.quit();
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -91,91 +128,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// ── IPC: local audio file storage ─────────────────────────────────────────
-// Allows the renderer to save/load audio blobs to the user's app data folder.
-// This keeps all data offline — nothing is sent to any server.
-
-const userDataPath = app.getPath('userData');
-const audioDir = path.join(userDataPath, 'audio');
-
-function resolveAudioFilePath(fileName: string): string {
-  if (typeof fileName !== 'string') {
-    throw new Error('Invalid file name.');
-  }
-
-  const trimmed = fileName.trim();
-  if (!trimmed || path.basename(trimmed) !== trimmed || /[\\/]/.test(trimmed)) {
-    throw new Error('Invalid file name.');
-  }
-
-  const filePath = path.resolve(audioDir, trimmed);
-  const audioRoot = `${path.resolve(audioDir)}${path.sep}`;
-  if (!filePath.startsWith(audioRoot)) {
-    throw new Error('Invalid file path.');
-  }
-
-  return filePath;
-}
-
-ipcMain.handle('audio:save', async (_event, fileName: string, arrayBuffer: ArrayBuffer) => {
-  try {
-    fs.mkdirSync(audioDir, { recursive: true });
-    const filePath = resolveAudioFilePath(fileName);
-    fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
-    return { success: true, filePath };
-  } catch (err) {
-    return { success: false, error: String(err) };
-  }
+app.on('before-quit', async () => {
+  log.info('[main] Shutting down...');
+  await closeDatabase();
 });
 
-ipcMain.handle('audio:list', async () => {
-  try {
-    fs.mkdirSync(audioDir, { recursive: true });
-    const files = fs.readdirSync(audioDir).map((name) => ({
-      name,
-      path: path.join(audioDir, name),
-      size: fs.statSync(path.join(audioDir, name)).size,
-      createdAt: fs.statSync(path.join(audioDir, name)).birthtime.toISOString(),
-    }));
-    return { success: true, files };
-  } catch (err) {
-    return { success: false, error: String(err), files: [] };
-  }
-});
-
-ipcMain.handle('audio:delete', async (_event, fileName: string) => {
-  try {
-    const filePath = resolveAudioFilePath(fileName);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: String(err) };
-  }
-});
-
-ipcMain.handle('audio:openDialog', async () => {
-  if (!mainWindow) return { canceled: true };
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select Audio File',
-    filters: [
-      { name: 'Audio Files', extensions: ['mp3', 'wav', 'm4a', 'mp4', 'webm', 'ogg'] },
-      { name: 'All Files', extensions: ['*'] },
-    ],
-    properties: ['openFile'],
-  });
-  if (result.canceled || result.filePaths.length === 0) {
-    return { canceled: true };
-  }
-  const filePath = result.filePaths[0]!;
-  const stat = fs.statSync(filePath);
-  return {
-    canceled: false,
-    filePath,
-    fileName: path.basename(filePath),
-    size: stat.size,
-  };
-});
-
-ipcMain.handle('app:getVersion', () => app.getVersion());
-ipcMain.handle('app:getPlatform', () => process.platform);
-ipcMain.handle('app:isOffline', () => !isDev);
