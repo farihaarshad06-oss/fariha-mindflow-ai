@@ -31,6 +31,7 @@
     "wait-on": "^8.0.1"
   },
   "build": {
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "appId": "ai.mindflow.fariha",
     "productName": "Fariha MindFlow AI",
     "copyright": "Copyright © 2024 Fariha MindFlow AI",
