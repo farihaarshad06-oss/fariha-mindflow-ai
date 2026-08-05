@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Mic, Square, Pause, Play, AlertTriangle, CheckCircle2, HardDrive, Shield } from 'lucide-react';
+import { Mic, Square, Pause, Play, AlertTriangle, CheckCircle2, HardDrive, Shield, FileText } from 'lucide-react';
 import {
   PageHeader,
   Card,
@@ -40,7 +40,7 @@ interface MicDevice {
   label: string;
 }
 
-const CHUNK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const CHUNK_INTERVAL_MS = 5 * 1000; // 5 seconds — matches main-process CHUNK_DURATION_MS
 
 const formatTime = (seconds: number) => {
   const h = Math.floor(seconds / 3600);
@@ -67,6 +67,10 @@ export function RecorderPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [lectureId] = useState<string>(() => `lecture-${Date.now()}`);
   const [importantTimes, setImportantTimes] = useState<number[]>([]);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [liveTranscriptActive, setLiveTranscriptActive] = useState(false);
+
+  const liveTranscriptRef = useRef<HTMLDivElement | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -139,6 +143,31 @@ export function RecorderPage() {
     });
     return unsub;
   }, [isDesktop, sessionId]);
+
+  // ── Live transcript listener ─────────────────────────────────────────
+  useEffect(() => {
+    if (!isDesktop || !window.electronAPI) return;
+    const unsub = window.electronAPI.onLiveTranscript((data) => {
+      if (data.partial) {
+        // Append text from newly transcribed segments
+        const newText = data.segments.map((s) => s.text).join(' ').trim();
+        if (newText) {
+          setLiveTranscript((prev) => (prev ? `${prev} ${newText}` : newText));
+          setLiveTranscriptActive(true);
+          // Fade the "live" pulse after 2 seconds of no new text
+          setTimeout(() => setLiveTranscriptActive(false), 2000);
+        }
+      }
+    });
+    return unsub;
+  }, [isDesktop]);
+
+  // ── Auto-scroll live transcript to bottom ────────────────────────────
+  useEffect(() => {
+    if (liveTranscriptRef.current) {
+      liveTranscriptRef.current.scrollTop = liveTranscriptRef.current.scrollHeight;
+    }
+  }, [liveTranscript]);
 
   // ── Helpers ──────────────────────────────────────────────────────────
   function clearTimers() {
@@ -338,6 +367,8 @@ export function RecorderPage() {
     setChunkIndex(0);
     setAudioLevel(0);
     setWaveform(Array.from({ length: 24 }, () => 0.3));
+    setLiveTranscript('');
+    setLiveTranscriptActive(false);
   };
 
   const markImportant = () => setImportantTimes((prev) => [...prev, seconds]);
@@ -526,6 +557,32 @@ export function RecorderPage() {
                   {formatTime(time)}
                 </span>
               ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Live Transcript panel */}
+      {isDesktop && (status === 'recording' || status === 'paused') && liveTranscript && (
+        <Card className="mt-4" data-testid="live-transcript-panel">
+          <CardBody>
+            <div className="mb-2 flex items-center gap-2">
+              <FileText className="h-4 w-4 text-brand-500" aria-hidden="true" />
+              <span className="text-sm font-medium text-slate-700">Live Transcript</span>
+              {liveTranscriptActive && (
+                <span
+                  className="inline-block h-2 w-2 animate-pulse rounded-full bg-brand-500"
+                  aria-label="Transcribing…"
+                />
+              )}
+            </div>
+            <div
+              ref={liveTranscriptRef}
+              className="max-h-48 overflow-y-auto rounded bg-slate-50 p-3 text-sm text-slate-800 leading-relaxed"
+              aria-live="polite"
+              aria-label="Live transcript"
+            >
+              {liveTranscript}
             </div>
           </CardBody>
         </Card>

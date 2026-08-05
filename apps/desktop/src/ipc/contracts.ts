@@ -101,6 +101,10 @@ export const IPC = {
   EXPORT_DATA: 'export:data',
   DIAGNOSTICS_GET: 'diagnostics:get',
 
+  // Live streaming transcription
+  RECORDING_CHUNK_TRANSCRIBE_NOW: 'recording:chunkTranscribeNow',
+  TRANSCRIPT_LIVE: 'transcript:live',
+
   // Whisper transcription trigger
   WHISPER_TRANSCRIBE_NOW: 'whisper:transcribeNow',
 
@@ -133,6 +137,14 @@ export const RecordingChunkSaveSchema = z.object({
   arrayBuffer: z.instanceof(ArrayBuffer).or(z.instanceof(Uint8Array)),
   durationMs: z.number().int().min(0),
   startOffsetMs: z.number().int().min(0),
+});
+
+export const LiveChunkTranscribeSchema = z.object({
+  sessionId: z.string().cuid(),
+  chunkId: z.string().cuid(),
+  lectureId: z.string().cuid(),
+  startOffsetMs: z.number().int().min(0),
+  language: z.string().length(2).default('en'),
 });
 
 export const SecretSetSchema = z.object({

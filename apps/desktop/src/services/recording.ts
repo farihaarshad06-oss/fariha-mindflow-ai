@@ -5,7 +5,7 @@
  * Each chunk is written atomically to disk, checksummed, and persisted in SQLite.
  *
  * Features:
- * - 5-minute chunk rotation
+ * - 5-second chunk rotation for real-time live transcription
  * - Crash recovery: on startup, any ACTIVE session with complete chunks is recoverable
  * - Disk space monitoring before each write
  * - Microphone disconnect detection (renderer sends an error event)
@@ -21,7 +21,7 @@ import { SettingsService } from './settings';
 import { JobQueue } from './jobQueue';
 import type { RecordingSession, AudioChunk } from '../generated/prisma';
 
-export const CHUNK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+export const CHUNK_DURATION_MS = 5 * 1000; // 5 seconds
 const MIN_FREE_BYTES = 100 * 1024 * 1024; // 100 MB minimum free space
 
 async function getAudioDir(): Promise<string> {
@@ -250,5 +250,42 @@ export const RecordingService = {
   async checkDiskSpace(): Promise<{ freeBytes: number; ok: boolean }> {
     const audioDir = await getAudioDir();
     return checkDiskSpace(audioDir);
+  },
+
+  /**
+   * Save a chunk and immediately enqueue a high-priority live TRANSCRIBE job
+   * for that chunk so the worker can stream a partial transcript back to the
+   * renderer while recording continues. Privacy-mode sessions skip enqueue.
+   */
+  async saveChunkAndEnqueueLive(opts: {
+    sessionId: string;
+    lectureId: string;
+    index: number;
+    data: Buffer;
+    durationMs: number;
+    startOffsetMs: number;
+    language?: string;
+    privacyMode?: boolean;
+  }): Promise<AudioChunk> {
+    const chunk = await RecordingService.saveChunk(opts);
+
+    if (!opts.privacyMode) {
+      await JobQueue.enqueue({
+        jobType: 'TRANSCRIBE',
+        payload: {
+          lectureId: opts.lectureId,
+          sessionId: opts.sessionId,
+          audioChunkId: chunk.id,
+          startOffsetMs: opts.startOffsetMs,
+          language: opts.language ?? 'en',
+          live: true,
+        },
+        priority: 1, // higher than regular jobs (3)
+        deduplicate: false, // every chunk is a distinct live job
+      });
+      log.info(`[recording] Live transcription job enqueued for chunk ${opts.index}`);
+    }
+
+    return chunk;
   },
 };

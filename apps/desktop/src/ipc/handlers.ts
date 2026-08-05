@@ -198,13 +198,21 @@ export function registerAllHandlers(): void {
     wrap(async () => {
       const data = RecordingChunkSaveSchema.parse(raw);
       const buf = Buffer.from(data.arrayBuffer instanceof ArrayBuffer ? data.arrayBuffer : (data.arrayBuffer as Uint8Array).buffer);
-      const chunk = await RecordingService.saveChunk({
+
+      // Look up the session to determine privacy mode and language so we can
+      // enqueue a live transcription job immediately after saving the chunk.
+      const db = getPrisma();
+      const session = await db.recordingSession.findUnique({ where: { id: data.sessionId } });
+
+      const chunk = await RecordingService.saveChunkAndEnqueueLive({
         sessionId: data.sessionId,
         lectureId: data.lectureId,
         index: data.index,
         data: buf,
         durationMs: data.durationMs,
         startOffsetMs: data.startOffsetMs,
+        privacyMode: session?.privacyMode ?? false,
+        language: 'en',
       });
       return ok(chunk);
     })

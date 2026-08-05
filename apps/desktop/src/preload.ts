@@ -115,4 +115,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onRecordingError: (
     listener: (data: { sessionId: string; code: string; message: string }) => void
   ) => on('recording:error', listener as (...args: unknown[]) => void),
+
+  /** Subscribe to live partial transcript events during active recording. */
+  onLiveTranscript: (
+    listener: (data: {
+      lectureId: string;
+      segments: Array<{ segmentIndex: number; text: string; timestampStart: number; timestampEnd: number }>;
+      chunkIndex?: number;
+      partial: boolean;
+    }) => void
+  ) => on('transcript:live', listener as (...args: unknown[]) => void),
 } satisfies Record<string, unknown>);
