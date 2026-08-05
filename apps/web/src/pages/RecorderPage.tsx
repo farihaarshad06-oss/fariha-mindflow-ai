@@ -13,6 +13,7 @@ import {
   Select,
 } from '@mindflow/ui';
 import { FILE_LIMITS } from '@mindflow/config';
+import { useLectureStore } from '../store/lecture';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -56,12 +57,14 @@ const formatTime = (seconds: number) => {
 export function RecorderPage() {
   const { t } = useTranslation();
   const location = useLocation();
+  const selectedLecture = useLectureStore((s) => s.selectedLecture);
 
   // lectureId MUST come from navigation state (set by NewLecturePage after
   // creating the lecture in the Electron database). A fake timestamp-based ID
   // fails Zod .cuid() validation in every IPC handler.
   const navState = (location.state ?? {}) as { lectureId?: string; lectureTitle?: string };
-  const lectureId = navState.lectureId ?? '';
+  const lectureId = navState.lectureId ?? selectedLecture?.id ?? '';
+  const lectureTitle = navState.lectureTitle ?? selectedLecture?.title;
 
   const [consent, setConsent] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(false);
@@ -376,11 +379,18 @@ export function RecorderPage() {
   const stopRecording = useCallback(async () => {
     clearTimers();
     setStatus('stopping');
-    mediaRecorderRef.current?.stop();
+    const recorder = mediaRecorderRef.current;
+    const stopPromise = recorder
+      ? new Promise<void>((resolve) => {
+          recorder.addEventListener('stop', () => resolve(), { once: true });
+        })
+      : Promise.resolve();
+    recorder?.stop();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     audioCtxRef.current?.close().catch(() => {});
     audioCtxRef.current = null;
     analyserRef.current = null;
+    await stopPromise;
 
     if (isDesktop && window.electronAPI && sessionId) {
       await window.electronAPI.stopRecording(sessionId);
@@ -422,7 +432,7 @@ export function RecorderPage() {
 
   return (
     <div>
-      <PageHeader title={navState.lectureTitle ? `${t('recorder.title')}: ${navState.lectureTitle}` : t('recorder.title')} />
+      <PageHeader title={lectureTitle ? `${t('recorder.title')}: ${lectureTitle}` : t('recorder.title')} />
 
       {diskWarning && (
         <Alert tone="danger" className="mb-3">

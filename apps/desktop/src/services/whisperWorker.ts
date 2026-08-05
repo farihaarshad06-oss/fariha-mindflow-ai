@@ -48,6 +48,7 @@ const activeJobs = new Map<string, AbortController>();
 // ── IPC push helpers ───────────────────────────────────────────────────────
 
 function broadcast(channel: string, payload: unknown): void {
+  log.info('[whisper] broadcast', { channel });
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, payload);
   }
@@ -111,6 +112,7 @@ function getFfmpegPath(): string | null {
 async function convertToWav(inputPath: string, outputPath: string, signal: AbortSignal): Promise<void> {
   const ffmpeg = getFfmpegPath();
   if (!ffmpeg) throw new Error('ffmpeg not available for audio conversion');
+  log.info('[fs] ffmpeg:convert:start', { inputPath, outputPath, ffmpeg });
 
   return new Promise((resolve, reject) => {
     // Safe argument array — NO shell interpolation
@@ -210,6 +212,7 @@ async function runWhisper(opts: {
 }): Promise<WhisperSegment[]> {
   const bin = getWhisperBin();
   if (!bin) throw new Error('Whisper binary not found. Please bundle whisper-cli in extraResources/bin/.');
+  log.info('[whisper] run:start', { wavPath: opts.wavPath, modelPath: opts.modelPath, language: opts.language, bin });
 
   const { wavPath, modelPath, language, signal, onProgress } = opts;
 
@@ -319,6 +322,7 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
   const chunkId: string | null = audioChunkId ?? null;
 
   try {
+    log.info('[whisper] process:start', { jobId, payload });
     broadcast('job:progress', { jobId, status: 'RUNNING', pct: 0, lectureId });
 
     // ── Resolve model ──────────────────────────────────────────────────────

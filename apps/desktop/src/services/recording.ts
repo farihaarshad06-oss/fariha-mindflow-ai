@@ -28,6 +28,7 @@ async function getAudioDir(): Promise<string> {
   const base = await SettingsService.getStoragePath();
   const dir = path.join(base, 'audio');
   fs.mkdirSync(dir, { recursive: true });
+  log.info('[fs] ensureDir', { dir });
   return dir;
 }
 
@@ -66,6 +67,7 @@ export const RecordingService = {
     privacyMode?: boolean;
   }): Promise<RecordingSession> {
     const db = getPrisma();
+    log.info('[recording] startSession:request', opts);
 
     // Ensure no duplicate active session for this lecture
     const existing = await db.recordingSession.findUnique({ where: { lectureId: opts.lectureId } });
@@ -116,6 +118,7 @@ export const RecordingService = {
 
   async stopSession(sessionId: string): Promise<RecordingSession> {
     const db = getPrisma();
+    log.info('[recording] stopSession:request', { sessionId });
     const session = await db.recordingSession.findUniqueOrThrow({ where: { id: sessionId } });
 
     const updated = await db.recordingSession.update({
@@ -124,6 +127,7 @@ export const RecordingService = {
     });
 
     await db.lecture.update({ where: { id: session.lectureId }, data: { state: 'PROCESSING' } });
+    await RecordingService.finalizeLectureRecording(session.lectureId, sessionId);
 
     // Enqueue transcription job unless privacy mode
     if (!session.privacyMode) {
@@ -158,6 +162,7 @@ export const RecordingService = {
 
     const fileName = `${opts.lectureId}-chunk-${String(opts.index).padStart(4, '0')}.webm`;
     const filePath = path.join(audioDir, fileName);
+    log.info('[fs] writeChunk:start', { filePath, bytes: opts.data.length, index: opts.index });
 
     // Atomic write: write to .tmp then rename
     const tmpPath = `${filePath}.tmp`;
@@ -287,5 +292,46 @@ export const RecordingService = {
     }
 
     return chunk;
+  },
+
+  async finalizeLectureRecording(lectureId: string, sessionId: string): Promise<void> {
+    const db = getPrisma();
+    const chunks = await db.audioChunk.findMany({
+      where: { lectureId, sessionId, state: { in: ['COMPLETE', 'DELETED'] } },
+      orderBy: { index: 'asc' },
+    });
+    log.info('[recording] finalize:start', { lectureId, sessionId, chunkCount: chunks.length });
+    if (chunks.length === 0) {
+      throw new Error(`No audio chunks found for lecture ${lectureId}`);
+    }
+
+    const audioDir = await getAudioDir();
+    const finalPath = path.join(audioDir, `${lectureId}.webm`);
+    const buffers = chunks
+      .map((chunk) => {
+        if (!fs.existsSync(chunk.filePath)) {
+          log.warn('[fs] missingChunkDuringFinalize', { lectureId, chunkId: chunk.id, filePath: chunk.filePath });
+          return null;
+        }
+        return fs.readFileSync(chunk.filePath);
+      })
+      .filter((buffer): buffer is Buffer => buffer !== null);
+
+    if (buffers.length === 0) {
+      throw new Error(`No persisted chunk files found for lecture ${lectureId}`);
+    }
+
+    fs.writeFileSync(finalPath, Buffer.concat(buffers));
+    log.info('[fs] finalize:writeComplete', { finalPath, chunkFiles: buffers.length });
+
+    const session = await db.recordingSession.findUniqueOrThrow({ where: { id: sessionId } });
+    await db.lecture.update({
+      where: { id: lectureId },
+      data: {
+        audioPath: finalPath,
+        durationSeconds: Math.max(1, Math.round(session.totalDurationMs / 1000)),
+      },
+    });
+    log.info('[recording] finalize:dbUpdated', { lectureId, durationSeconds: Math.max(1, Math.round(session.totalDurationMs / 1000)) });
   },
 };
