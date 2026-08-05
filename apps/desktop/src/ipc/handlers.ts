@@ -56,9 +56,38 @@ function wrap<T>(fn: () => Promise<IpcResult<T>>): Promise<IpcResult<T>> {
 }
 
 export function registerAllHandlers(): void {
+  log.info('[ipc] registerAllHandlers:start');
+  ipcMain.handle('diagnostics:startupEvent', (_e, raw: unknown) =>
+    wrap(async () => {
+      const payload = (raw as { stage?: string; event?: string; details?: Record<string, unknown> }) ?? {};
+      const { recordStartupEvent } = await import('../startupDiagnostics');
+      recordStartupEvent(payload.stage ?? 'renderer-bootstrap', payload.event ?? 'unknown', payload.details);
+      return ok(undefined);
+    })
+  );
+  log.info('[ipc] registered diagnostics:startupEvent');
+
+  ipcMain.handle('diagnostics:startupFailure', (_e, raw: unknown) =>
+    wrap(async () => {
+      const payload = (raw as { title?: string; message?: string; stage?: string; stack?: string }) ?? {};
+      const { markStartupFailure, writeStartupDiagnostics } = await import('../startupDiagnostics');
+      markStartupFailure({
+        title: payload.title ?? 'Renderer Startup Failed',
+        message: payload.message ?? 'Unknown renderer startup error',
+        stage: payload.stage ?? 'renderer-bootstrap',
+        stack: payload.stack,
+      });
+      writeStartupDiagnostics();
+      return ok(undefined);
+    })
+  );
+  log.info('[ipc] registered diagnostics:startupFailure');
+
   // ── App ───────────────────────────────────────────────────────────────
   ipcMain.handle(IPC.APP_VERSION, () => ok(app.getVersion()));
+  log.info(`[ipc] registered ${IPC.APP_VERSION}`);
   ipcMain.handle(IPC.APP_PLATFORM, () => ok(process.platform));
+  log.info(`[ipc] registered ${IPC.APP_PLATFORM}`);
   ipcMain.handle(IPC.APP_PATHS, () =>
     ok({
       userData: app.getPath('userData'),
@@ -66,11 +95,13 @@ export function registerAllHandlers(): void {
       temp: app.getPath('temp'),
     })
   );
+  log.info(`[ipc] registered ${IPC.APP_PATHS}`);
 
   // ── Settings ──────────────────────────────────────────────────────────
   ipcMain.handle(IPC.SETTINGS_GET, () =>
     wrap(async () => ok(await SettingsService.get()))
   );
+  log.info(`[ipc] registered ${IPC.SETTINGS_GET}`);
 
   ipcMain.handle(IPC.SETTINGS_SET, (_e, raw: unknown) =>
     wrap(async () => {
@@ -78,6 +109,7 @@ export function registerAllHandlers(): void {
       return ok(await SettingsService.update(data));
     })
   );
+  log.info(`[ipc] registered ${IPC.SETTINGS_SET}`);
 
   // ── Secrets ───────────────────────────────────────────────────────────
   ipcMain.handle(IPC.SECRET_SET, (_e, raw: unknown) =>

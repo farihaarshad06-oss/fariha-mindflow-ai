@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { shell, clipboard } from 'electron';
 import type { IpcResult } from './ipc/contracts';
 
 /**
@@ -22,29 +23,29 @@ function on(channel: string, listener: (...args: unknown[]) => void): () => void
   return () => ipcRenderer.removeListener(channel, wrapped);
 }
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  // ── App ────────────────────────────────────────────────────────────
+const electronAPI = {
   getVersion: () => invoke('app:getVersion'),
   getPlatform: () => invoke('app:getPlatform'),
   getPaths: () => invoke('app:getPaths'),
   isDesktop: true,
-
-  // ── Settings ───────────────────────────────────────────────────────
+  openStartupLogs: async () => {
+    const res = await invoke('app:getPaths');
+    if (res.ok && res.data && typeof (res.data as { logs?: unknown }).logs === 'string') {
+      await shell.openPath((res.data as { logs: string }).logs);
+    }
+  },
+  copyStartupDiagnostics: async () => {
+    const res = await invoke('diagnostics:get');
+    if (res.ok) clipboard.writeText(JSON.stringify(res.data, null, 2));
+  },
   getSettings: () => invoke('settings:get'),
   updateSettings: (data: unknown) => invoke('settings:set', data),
-
-  // ── Secrets (write/check/delete only — never read) ─────────────────
   setSecret: (key: string, value: string) => invoke('secret:set', { key, value }),
   hasSecret: (key: string) => invoke('secret:has', key),
   deleteSecret: (key: string) => invoke('secret:delete', key),
-
-  // ── Audio (legacy direct-file) ─────────────────────────────────────
-  saveAudio: (fileName: string, arrayBuffer: ArrayBuffer) =>
-    invoke('audio:save', fileName, arrayBuffer),
+  saveAudio: (fileName: string, arrayBuffer: ArrayBuffer) => invoke('audio:save', fileName, arrayBuffer),
   listAudio: () => invoke('audio:list'),
   deleteAudio: (fileName: string) => invoke('audio:delete', fileName),
-
-  // ── Recording sessions ─────────────────────────────────────────────
   startRecording: (opts: unknown) => invoke('recording:start', opts),
   pauseRecording: (sessionId: string) => invoke('recording:pause', sessionId),
   resumeRecording: (sessionId: string) => invoke('recording:resume', sessionId),
@@ -52,71 +53,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getActiveRecording: (lectureId: string) => invoke('recording:getActive', lectureId),
   saveAudioChunk: (opts: unknown) => invoke('recording:chunkSave', opts),
   checkDiskSpace: () => invoke('recording:checkDisk'),
-
-  // ── Courses ────────────────────────────────────────────────────────
   listCourses: () => invoke('course:list'),
   getCourse: (id: string) => invoke('course:get', id),
   createCourse: (data: unknown) => invoke('course:create', data),
   updateCourse: (id: string, data: unknown) => invoke('course:update', id, data),
   deleteCourse: (id: string) => invoke('course:delete', id),
-
-  // ── Lectures ───────────────────────────────────────────────────────
   listLectures: (courseId?: string) => invoke('lecture:list', courseId),
   getLecture: (id: string) => invoke('lecture:get', id),
   createLecture: (data: unknown) => invoke('lecture:create', data),
   updateLecture: (id: string, data: unknown) => invoke('lecture:update', id, data),
   deleteLecture: (id: string) => invoke('lecture:delete', id),
-
-  // ── Transcripts ────────────────────────────────────────────────────
   listTranscript: (lectureId: string) => invoke('transcript:list', lectureId),
   editTranscriptSegment: (data: unknown) => invoke('transcript:editSegment', data),
-
-  // ── Whisper models ─────────────────────────────────────────────────
   listModels: () => invoke('model:list'),
   downloadModel: (data: unknown) => invoke('model:downloadStart', data),
   cancelDownload: (modelId: string) => invoke('model:downloadCancel', modelId),
   deleteModel: (modelId: string) => invoke('model:delete', modelId),
-
-  // ── Jobs ───────────────────────────────────────────────────────────
   listJobs: (filter?: unknown) => invoke('job:list', filter),
   cancelJob: (jobId: string) => invoke('job:cancel', jobId),
-
-  // ── AI Providers ───────────────────────────────────────────────────
   listProviders: () => invoke('provider:list'),
   upsertProvider: (data: unknown) => invoke('provider:upsert', data),
   deleteProvider: (id: string) => invoke('provider:delete', id),
   testProvider: (id: string) => invoke('provider:test', id),
-
-  // ── Usage ──────────────────────────────────────────────────────────
   getUsageSummary: (opts?: unknown) => invoke('usage:summary', opts),
-
-  // ── Flashcards ─────────────────────────────────────────────────────
   listFlashcards: (courseId?: string) => invoke('flashcard:list', courseId),
   reviewFlashcard: (data: unknown) => invoke('flashcard:review', data),
-
-  // ── Chat ───────────────────────────────────────────────────────────
   getChatHistory: (courseId?: string) => invoke('chat:history', courseId),
   sendChatMessage: (data: unknown) => invoke('chat:send', data),
-
-  // ── Quiz ───────────────────────────────────────────────────────────
   listQuizzes: (courseId?: string) => invoke('quiz:list', courseId),
   submitQuiz: (data: unknown) => invoke('quiz:submit', data),
-
-  // ── Backup & diagnostics ───────────────────────────────────────────
   getDiagnostics: () => invoke('diagnostics:get'),
-
-  // ── Push events from main → renderer ──────────────────────────────
-  /** Subscribe to model download progress events. Returns an unsubscribe fn. */
   onModelDownloadProgress: (
     listener: (data: { modelId: string; downloaded: number; total: number }) => void
   ) => on('model:downloadProgress', listener as (...args: unknown[]) => void),
-
-  /** Subscribe to recording error events (disk full, mic disconnect, etc). */
   onRecordingError: (
     listener: (data: { sessionId: string; code: string; message: string }) => void
   ) => on('recording:error', listener as (...args: unknown[]) => void),
-
-  /** Subscribe to live partial transcript events during active recording. */
   onLiveTranscript: (
     listener: (data: {
       lectureId: string;
@@ -125,4 +97,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       partial: boolean;
     }) => void
   ) => on('transcript:live', listener as (...args: unknown[]) => void),
-} satisfies Record<string, unknown>);
+} satisfies Record<string, unknown>;
+
+try {
+  console.log('[preload] Initialising preload bridge');
+  contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+  console.log('[preload] electronAPI exposed');
+  void ipcRenderer.invoke('diagnostics:startupEvent', {
+    stage: 'preload',
+    event: 'bridge-exposed',
+  }).catch(() => undefined);
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+  console.error('[preload] Failed to expose electronAPI', error);
+  void ipcRenderer.invoke('diagnostics:startupFailure', {
+    title: 'Preload Initialisation Failed',
+    message,
+    stack,
+    stage: 'preload',
+  }).catch(() => undefined);
+  throw error;
+}

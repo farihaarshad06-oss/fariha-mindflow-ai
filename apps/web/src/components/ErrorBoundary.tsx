@@ -40,6 +40,9 @@ export class ErrorBoundary extends Component<Props, State> {
           <p style={{ color: '#374151', marginBottom: '1rem' }}>
             The application encountered an unexpected error. Please reload to try again.
           </p>
+          <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
+            Startup stage: renderer-bootstrap
+          </p>
           <pre
             style={{
               background: '#f3f4f6',
