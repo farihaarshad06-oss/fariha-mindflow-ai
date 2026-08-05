@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import log from 'electron-log/main';
+import { pathToFileURL } from 'node:url';
 import { initDatabase, closeDatabase } from './services/database';
 import { registerAllHandlers } from './ipc/handlers';
 import { RecordingService } from './services/recording';
@@ -36,6 +37,23 @@ function resolveWebRoot(): string {
   const webRoot = path.join(process.resourcesPath, 'web');
   log.info(`[main] resolveWebRoot → ${webRoot}`);
   return webRoot;
+}
+
+function buildFileLoadDiagnostics(targetPath: string) {
+  const absolutePath = path.resolve(targetPath);
+  const exists = fs.existsSync(absolutePath);
+  const generatedUrl = pathToFileURL(absolutePath).toString();
+  return { absolutePath, generatedUrl, exists };
+}
+
+function logWindowLoad(kind: 'loadURL' | 'loadFile', payload: {
+  absolutePath?: string;
+  generatedUrl: string;
+  exists: boolean;
+  originalTarget: string;
+}): void {
+  log.info(`[main] ${kind}`, payload);
+  recordStartupEvent('renderer-load', kind, payload);
 }
 
 // ── Single-instance lock ───────────────────────────────────────────────────
@@ -92,7 +110,14 @@ async function showStartupFailure(payload: StartupFailurePayload): Promise<void>
     });
   }
   mainWindow.webContents.once('did-finish-load', () => mainWindow?.show());
-  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderStartupFailureHtml(payload))}`);
+  const generatedUrl = `data:text/html;charset=utf-8,${encodeURIComponent(renderStartupFailureHtml(payload))}`;
+  logWindowLoad('loadURL', {
+    absolutePath: undefined,
+    generatedUrl,
+    exists: true,
+    originalTarget: 'startup-failure-inline-html',
+  });
+  await mainWindow.loadURL(generatedUrl);
 }
 
 function createWindow(): void {
@@ -173,16 +198,28 @@ function createWindow(): void {
   });
 
   if (isDev) {
-    recordStartupEvent('renderer-load', 'loadURL', { url: 'http://localhost:5173' });
+    logWindowLoad('loadURL', {
+      absolutePath: undefined,
+      generatedUrl: 'http://localhost:5173',
+      exists: true,
+      originalTarget: 'http://localhost:5173',
+    });
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     const webRoot = resolveWebRoot();
     const indexHtml = path.join(webRoot, 'index.html');
+    const indexHtmlDiagnostics = buildFileLoadDiagnostics(indexHtml);
     log.info(`[main] Loading renderer from: ${indexHtml}`);
+    log.info('[main] Packaged renderer diagnostics', {
+      ...indexHtmlDiagnostics,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      webRoot,
+    });
 
     // Verify the file exists before loading so we surface a clear error.
-    if (!fs.existsSync(indexHtml)) {
+    if (!indexHtmlDiagnostics.exists) {
       log.error(`[main] index.html NOT FOUND at: ${indexHtml}`);
       const failure = markStartupFailure({
         title: 'Renderer Missing',
@@ -194,7 +231,10 @@ function createWindow(): void {
       return;
     }
 
-    recordStartupEvent('renderer-load', 'loadFile', { indexHtml });
+    logWindowLoad('loadFile', {
+      ...indexHtmlDiagnostics,
+      originalTarget: indexHtml,
+    });
     mainWindow.loadFile(indexHtml).catch((err: unknown) => {
       log.error('[main] loadFile error:', err instanceof Error ? err.message : String(err));
       const failure = markStartupFailure({
