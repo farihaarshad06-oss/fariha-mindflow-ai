@@ -80,6 +80,38 @@ describe('database.ts — no external process spawning', () => {
     expect(src).toContain("process.resourcesPath, 'prisma', 'migrations'");
   });
 
+  it('does not use root-relative asset URLs in web index.html', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../web/index.html'),
+      'utf8',
+    );
+    expect(src).not.toContain('href="/');
+    expect(src).not.toContain('src="/');
+    expect(src).toContain('href="./manifest.webmanifest"');
+    expect(src).toContain('src="./src/main.tsx"');
+  });
+
+  it('uses HashRouter in Electron renderer bootstrap', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../../web/src/main.tsx'),
+      'utf8',
+    );
+    expect(src).toContain('const Router = window.electronAPI ? HashRouter : BrowserRouter;');
+    expect(src).toContain('<Router>');
+  });
+
+  it('logs absolute path, generated file URL, and existence before loadFile', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../main.ts'),
+      'utf8',
+    );
+    expect(src).toContain('pathToFileURL');
+    expect(src).toContain('absolutePath');
+    expect(src).toContain('generatedUrl');
+    expect(src).toContain('exists');
+    expect(src).toContain("logWindowLoad('loadFile'");
+  });
+
   it('does NOT reference app.asar in executable lines', () => {
     const src = fs.readFileSync(
       path.join(__dirname, '../services/database.ts'),
