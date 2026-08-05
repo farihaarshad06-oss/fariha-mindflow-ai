@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
@@ -10,6 +11,7 @@ import { apiClient } from '../lib/api';
 export function NewLecturePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -19,7 +21,30 @@ export function NewLecturePage() {
     defaultValues: { consentAcknowledged: true },
   });
 
+  const isDesktop = typeof window !== 'undefined' && !!window.electronAPI;
+
   async function onSubmit(data: CreateLectureInput) {
+    setSubmitError(null);
+
+    // In the Electron desktop app, create the lecture in the local database so
+    // we get a real CUID to pass to the RecorderPage. Without a valid lecture ID
+    // the recording IPC handlers reject every call (Zod .cuid() validation).
+    if (isDesktop && window.electronAPI) {
+      const res = await window.electronAPI.createLecture({
+        title: data.title,
+        courseId: data.courseId || undefined,
+        language: 'en',
+      });
+      if (!res.ok) {
+        setSubmitError(res.error ?? 'Failed to create lecture. Please try again.');
+        return;
+      }
+      const lecture = res.data as { id: string; title: string };
+      navigate('/recorder', { state: { lectureId: lecture.id, lectureTitle: lecture.title } });
+      return;
+    }
+
+    // Non-desktop / web fallback: call the HTTP API (may fail in demo mode).
     try {
       await apiClient.post('/lectures', data);
     } catch {
@@ -51,6 +76,7 @@ export function NewLecturePage() {
             <span>{t('recorder.consentRequired')}</span>
           </label>
         </Alert>
+        {submitError && <Alert tone="danger">{submitError}</Alert>}
         <Button type="submit" loading={isSubmitting}>
           {t('common.create')}
         </Button>

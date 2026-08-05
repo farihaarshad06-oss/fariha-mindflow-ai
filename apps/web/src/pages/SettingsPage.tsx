@@ -59,22 +59,50 @@ export function SettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const [keyErrorMessage, setKeyErrorMessage] = useState<string | null>(null);
+
   const saveApiKey = async () => {
     if (!apiKey.trim() || !isDesktop || !window.electronAPI) return;
+    setKeyErrorMessage(null);
+
     const providersRes = await window.electronAPI.listProviders();
     const providers = providersRes.ok && Array.isArray(providersRes.data) ? providersRes.data as Array<{ id: string; providerType: string }> : [];
-    const matchingProvider = providers.find((provider) => provider.providerType === apiKeyProvider);
+    let matchingProvider = providers.find((provider) => provider.providerType === apiKeyProvider);
+
+    // Auto-create the provider record if it doesn't exist yet so the user
+    // can save a key without having to manually configure providers first.
     if (!matchingProvider) {
-      setKeyStatus('error');
-      setTimeout(() => setKeyStatus('idle'), 3000);
-      return;
+      const displayNames: Record<string, string> = {
+        openai: 'OpenAI',
+        azure: 'Azure OpenAI',
+        gemini: 'Google Gemini',
+        ollama: 'Ollama',
+        lmstudio: 'LM Studio',
+      };
+      const upsertRes = await window.electronAPI.upsertProvider({
+        providerType: apiKeyProvider,
+        displayName: displayNames[apiKeyProvider] ?? apiKeyProvider,
+        enabled: true,
+        isDefault: providers.length === 0, // first provider becomes default
+      });
+      if (!upsertRes.ok || !upsertRes.data) {
+        setKeyStatus('error');
+        setKeyErrorMessage(`Failed to create provider: ${upsertRes.error ?? 'Unknown error'}`);
+        setTimeout(() => { setKeyStatus('idle'); setKeyErrorMessage(null); }, 5000);
+        return;
+      }
+      const created = upsertRes.data as { id: string };
+      matchingProvider = { id: created.id, providerType: apiKeyProvider };
     }
+
     const res = await window.electronAPI.setSecret(`provider.${matchingProvider.id}`, apiKey);
     if (res.ok) {
       setKeyStatus('saved');
       setApiKey('');
     } else {
       setKeyStatus('error');
+      setKeyErrorMessage(`Failed to save key: ${res.error ?? 'OS encryption may be unavailable.'}`);
+      setTimeout(() => setKeyErrorMessage(null), 5000);
     }
     setTimeout(() => setKeyStatus('idle'), 3000);
   };
@@ -188,7 +216,7 @@ export function SettingsPage() {
                 </div>
               )}
               {keyStatus === 'saved' && <Alert tone="success">Key saved securely.</Alert>}
-              {keyStatus === 'error' && <Alert tone="danger">Failed to save key. OS encryption may be unavailable.</Alert>}
+              {keyStatus === 'error' && <Alert tone="danger">{keyErrorMessage ?? 'Failed to save key. OS encryption may be unavailable.'}</Alert>}
             </div>
           </CardBody>
         </Card>

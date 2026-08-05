@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import { Mic, Square, Pause, Play, AlertTriangle, CheckCircle2, HardDrive, Shield, FileText } from 'lucide-react';
 import {
   PageHeader,
@@ -33,6 +34,7 @@ type RecorderError =
   | 'maxLength'
   | 'saveFailed'
   | 'diskFull'
+  | 'noLectureId'
   | null;
 
 interface MicDevice {
@@ -53,6 +55,14 @@ const formatTime = (seconds: number) => {
 
 export function RecorderPage() {
   const { t } = useTranslation();
+  const location = useLocation();
+
+  // lectureId MUST come from navigation state (set by NewLecturePage after
+  // creating the lecture in the Electron database). A fake timestamp-based ID
+  // fails Zod .cuid() validation in every IPC handler.
+  const navState = (location.state ?? {}) as { lectureId?: string; lectureTitle?: string };
+  const lectureId = navState.lectureId ?? '';
+
   const [consent, setConsent] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(false);
   const [status, setStatus] = useState<RecorderStatus>('idle');
@@ -65,7 +75,6 @@ export function RecorderPage() {
   const [diskFreeBytes, setDiskFreeBytes] = useState<number | null>(null);
   const [chunkIndex, setChunkIndex] = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [lectureId] = useState<string>(() => `lecture-${Date.now()}`);
   const [importantTimes, setImportantTimes] = useState<number[]>([]);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [liveTranscriptActive, setLiveTranscriptActive] = useState(false);
@@ -82,6 +91,9 @@ export function RecorderPage() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const secondsRef = useRef(0);
+  // Keep a ref so onstop/flushChunk always see the current sessionId even when
+  // the callback was created before setSessionId() was called.
+  const sessionIdRef = useRef<string | null>(null);
 
   const isDesktop = typeof window !== 'undefined' && !!window.electronAPI;
 
@@ -205,9 +217,13 @@ export function RecorderPage() {
     const blob = new Blob(data, { type: 'audio/webm;codecs=opus' });
     const arrayBuffer = await blob.arrayBuffer();
 
-    if (isDesktop && window.electronAPI && sessionId) {
+    // Use the ref so we always get the current sessionId even if this callback
+    // was closed over before setSessionId() was called in startRecording.
+    const currentSessionId = sessionIdRef.current;
+
+    if (isDesktop && window.electronAPI && currentSessionId) {
       const res = await window.electronAPI.saveAudioChunk({
-        sessionId,
+        sessionId: currentSessionId,
         lectureId,
         index: idx,
         arrayBuffer,
@@ -219,9 +235,13 @@ export function RecorderPage() {
           setError('diskFull');
           void stopRecording();
         } else {
-          console.warn('[recorder] chunk save failed:', res.error);
+          console.error('[recorder] chunk save failed:', res.error);
         }
       }
+    } else if (isDesktop && window.electronAPI && !currentSessionId) {
+      // Session ID not yet set — this can happen if startRecording IPC call is
+      // still in-flight. Log clearly so the issue is visible.
+      console.error('[recorder] flushChunk called with no sessionId — chunk lost for index', idx);
     } else {
       // Browser fallback: save to IndexedDB/memory (non-persistent)
       const fileName = `${lectureId}-chunk-${String(idx).padStart(4, '0')}.webm`;
@@ -229,11 +249,14 @@ export function RecorderPage() {
         void window.electronAPI.saveAudio(fileName, arrayBuffer);
       }
     }
-  }, [isDesktop, sessionId, lectureId]);
+  }, [isDesktop, lectureId]);
 
   // ── Start recording ──────────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     if (!supported) { setError('unsupported'); setStatus('error'); return; }
+    // In Electron the lectureId must be a real CUID obtained from the database.
+    // If none was supplied via navigation state the user shouldn't be here — show an error.
+    if (isDesktop && !lectureId) { setError('noLectureId'); setStatus('error'); return; }
     setStatus('requesting');
     setError(null);
 
@@ -268,7 +291,15 @@ export function RecorderPage() {
         });
         if (res.ok && res.data) {
           newSessionId = (res.data as { id: string }).id;
+          sessionIdRef.current = newSessionId;
           setSessionId(newSessionId);
+        } else if (!res.ok) {
+          // Surface the IPC error so it's not silently swallowed
+          setError('interrupted');
+          setStatus('error');
+          console.error('[recorder] startRecording IPC error:', res.error);
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
       }
 
@@ -364,6 +395,7 @@ export function RecorderPage() {
     secondsRef.current = 0;
     setImportantTimes([]);
     setSessionId(null);
+    sessionIdRef.current = null;
     setChunkIndex(0);
     setAudioLevel(0);
     setWaveform(Array.from({ length: 24 }, () => 0.3));
@@ -382,6 +414,7 @@ export function RecorderPage() {
     maxLength: t('recorder.maxLength'),
     saveFailed: t('recorder.uploadFailed'),
     diskFull: 'Insufficient disk space. Recording stopped.',
+    noLectureId: 'No lecture selected. Please go back and create or select a lecture before recording.',
   };
 
   const diskFreeGb = diskFreeBytes !== null ? (diskFreeBytes / 1024 / 1024 / 1024).toFixed(1) : null;
@@ -389,7 +422,7 @@ export function RecorderPage() {
 
   return (
     <div>
-      <PageHeader title={t('recorder.title')} />
+      <PageHeader title={navState.lectureTitle ? `${t('recorder.title')}: ${navState.lectureTitle}` : t('recorder.title')} />
 
       {diskWarning && (
         <Alert tone="danger" className="mb-3">
