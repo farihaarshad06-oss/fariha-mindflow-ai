@@ -35,12 +35,57 @@ Artifacts are written to `apps/desktop/dist-app/`.
 | **Preload** (`src/preload.ts`) | Exposes a safe `window.electronAPI` bridge via `contextBridge` |
 | **Renderer** | The built `apps/web/dist/` bundle, loaded as a local file in production |
 
-## Offline operation
+## Local-First Architecture
+
+MindFlow AI follows a **local-first** design: every normal operation works completely offline. Cloud AI is called only for the five features that genuinely require AI reasoning.
+
+### Feature locality map
+
+| Feature | Locality | Notes |
+|---|---|---|
+| Audio recording (start/pause/resume/stop) | **LOCAL** | WebM/Opus chunks written directly to disk |
+| Waveform & timer | **LOCAL** | Renderer-side only |
+| Microphone detection & device selection | **LOCAL** | MediaDevices API |
+| Speech-to-text / transcription | **LOCAL** | On-device whisper.cpp via `nodejs-whisper` |
+| Live transcript streaming | **LOCAL** | Chunks processed by local Whisper every 2–5 s |
+| Courses & lectures (CRUD) | **LOCAL** | SQLite + Prisma |
+| Transcript viewing & editing | **LOCAL** | SQLite |
+| Full-text search | **LOCAL** | SQLite FTS5 / BM25 |
+| Notes | **LOCAL** | SQLite |
+| Settings & privacy mode | **LOCAL** | SQLite |
+| Backup & restore | **LOCAL** | ZIP export/import |
+| Playback | **LOCAL** | Local audio files |
+| Flashcard review (SM-2) | **LOCAL** | Spaced-repetition computed in-process |
+| **Generate Summary** | **AI_REQUIRED** | Returns `AI_NOT_CONFIGURED` when no key set |
+| **Generate Flashcards** | **AI_REQUIRED** | Returns `AI_NOT_CONFIGURED` when no key set |
+| **Generate Quiz** | **AI_REQUIRED** | Returns `AI_NOT_CONFIGURED` when no key set |
+| **Study Assistant Chat** | **AI_REQUIRED** | Returns `AI_NOT_CONFIGURED` when no key set |
+| **Study Recommendations** | **AI_REQUIRED** | Returns `AI_NOT_CONFIGURED` when no key set |
+
+### AI service layer
+
+All AI calls flow through a single `AIService` boundary:
+
+```
+Renderer  →  IPC (contracts.ts)  →  isAiConfigured()  →  learning.ts  →  aiProviders.ts
+                                          ↓ false
+                               err({ code: 'AI_NOT_CONFIGURED' })
+```
+
+No component may call `aiRequest()` directly. Every AI IPC handler checks `isAiConfigured()` first and returns a structured error when no provider key is stored.  The application is fully usable with **zero AI provider configured**.
+
+### Security
+
+- API keys are stored exclusively in the OS keychain via `safeStorage` (Electron) — never in SQLite, never logged.
+- AI is silently disabled when no key exists; the user sees a "Configure AI Provider" prompt.
+- All local Whisper transcription runs in-process — no audio is uploaded to any cloud service.
+
+
 
 - The web build is embedded inside the installer as a static asset (`extraResources/web/`).
-- All lecture/course data is persisted in `localStorage` (IndexedDB for binary audio).
-- The `window.electronAPI.saveAudio` / `listAudio` / `deleteAudio` IPC calls store audio files in the OS user-data folder (`%APPDATA%/Fariha MindFlow AI/audio` on Windows, `~/Library/Application Support/…` on macOS, `~/.config/…` on Linux).
-- No external network calls are made in the packaged build.
+- All lecture/course/transcript data is persisted in SQLite via Prisma (stored in the OS user-data folder).
+- Audio chunks are written directly to disk under `<userData>/audio/` via the `recording:chunkSave` IPC handler.
+- No external network calls are made in the packaged build (except for the opt-in AI features described above).
 
 ## Audio file upload
 

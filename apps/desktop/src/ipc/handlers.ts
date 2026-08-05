@@ -37,7 +37,7 @@ import { TranscriptService } from '../services/transcript';
 import { WhisperModelManager } from '../services/whisperModels';
 import { WhisperWorker } from '../services/whisperWorker';
 import { JobQueue } from '../services/jobQueue';
-import { testProviderConnection } from '../services/aiProviders';
+import { testProviderConnection, isAiConfigured } from '../services/aiProviders';
 import { generateSummary, generateFlashcards, groundedChat, generateWeeklyQuiz, generateStudyPlan, analyzeWeaknesses } from '../services/learning';
 import { createBackup, previewRestore, restoreBackup, exportTranscript, exportFlashcards, exportFullData, exportDiagnostics } from '../services/backup';
 import { getPrisma } from '../services/database';
@@ -490,6 +490,7 @@ export function registerAllHandlers(): void {
   );
 
   // ── Chat ──────────────────────────────────────────────────────────────
+  // LOCAL: chat history retrieval reads from SQLite — no network required.
   ipcMain.handle(IPC.CHAT_HISTORY, (_e, courseId: unknown) =>
     wrap(async () => {
       const db = getPrisma();
@@ -501,13 +502,17 @@ export function registerAllHandlers(): void {
     })
   );
 
+  // AI_REQUIRED: answers questions about lectures using AI (study assistant).
   ipcMain.handle(IPC.CHAT_SEND, (_e, raw: unknown) =>
     wrap(async () => {
       const { courseId, message } = ChatSendSchema.parse(raw);
       const db = getPrisma();
 
-      // Save user message
+      // Save user message first so it is persisted regardless of AI availability
       await db.chatMessage.create({ data: { courseId, role: 'user', content: message } });
+
+      // Guard: AI provider must be configured for grounded chat
+      if (!(await isAiConfigured())) return err('AI provider not configured', 'AI_NOT_CONFIGURED');
 
       // Real grounded chat with FTS5 retrieval
       const result = await groundedChat({ courseId: courseId ?? undefined, message });
@@ -631,14 +636,16 @@ export function registerAllHandlers(): void {
   );
 
   // ── Summary ────────────────────────────────────────────────────────────
+  // AI_REQUIRED: generates lecture summary via the configured AI provider.
   ipcMain.handle(IPC.SUMMARY_GET, (_e, lectureId: unknown) =>
     wrap(async () => {
       if (typeof lectureId !== 'string') return err('Invalid lectureId');
       const db = getPrisma();
-      // Try to get existing
+      // Return cached summary without requiring AI
       const existing = await db.lectureSummary.findUnique({ where: { lectureId } });
       if (existing) return ok(existing);
-      // Generate
+      // Guard: AI provider must be configured to generate a new summary
+      if (!(await isAiConfigured())) return err('AI provider not configured', 'AI_NOT_CONFIGURED');
       const summary = await generateSummary(lectureId);
       return ok(summary);
     })
@@ -652,7 +659,8 @@ export function registerAllHandlers(): void {
     })
   );
 
-  // ── Whisper transcription trigger ──────────────────────────────────────
+  // ── Whisper transcription trigger (LOCAL) ─────────────────────────────
+  // LOCAL: uses on-device whisper.cpp — no network required.
   ipcMain.handle('whisper:transcribeNow', (_e, raw: unknown) =>
     wrap(async () => {
       const { lectureId, modelId, language } = (raw as { lectureId?: string; modelId?: string; language?: string }) ?? {};
@@ -663,19 +671,25 @@ export function registerAllHandlers(): void {
   );
 
   // ── Flashcard generation ───────────────────────────────────────────────
+  // AI_REQUIRED: generates study flashcards from transcript via AI provider.
   ipcMain.handle('flashcard:generate', (_e, raw: unknown) =>
     wrap(async () => {
       const { lectureId, courseId } = (raw as { lectureId?: string; courseId?: string }) ?? {};
       if (!lectureId || typeof lectureId !== 'string') return err('Invalid lectureId');
+      // Guard: AI provider must be configured
+      if (!(await isAiConfigured())) return err('AI provider not configured', 'AI_NOT_CONFIGURED');
       return ok(await generateFlashcards(lectureId, courseId));
     })
   );
 
   // ── Quiz generation ────────────────────────────────────────────────────
+  // AI_REQUIRED: generates a quiz from course transcripts via AI provider.
   ipcMain.handle('quiz:generate', (_e, raw: unknown) =>
     wrap(async () => {
       const { courseId, weekStart } = (raw as { courseId?: string; weekStart?: string }) ?? {};
       if (!courseId || typeof courseId !== 'string') return err('Invalid courseId');
+      // Guard: AI provider must be configured
+      if (!(await isAiConfigured())) return err('AI provider not configured', 'AI_NOT_CONFIGURED');
       const week = weekStart ? new Date(weekStart) : getLastSunday();
       const quizId = await generateWeeklyQuiz(courseId, week);
       return ok({ quizId });
@@ -683,17 +697,23 @@ export function registerAllHandlers(): void {
   );
 
   // ── Study plan ─────────────────────────────────────────────────────────
+  // AI_REQUIRED: generates personalized study recommendations via AI provider.
   ipcMain.handle('studyplan:get', (_e, courseId: unknown) =>
     wrap(async () => {
       if (typeof courseId !== 'string') return err('Invalid courseId');
+      // Guard: AI provider must be configured
+      if (!(await isAiConfigured())) return err('AI provider not configured', 'AI_NOT_CONFIGURED');
       return ok(await generateStudyPlan(courseId));
     })
   );
 
   // ── Weakness analysis ──────────────────────────────────────────────────
+  // AI_REQUIRED: identifies weak topics using AI-driven analysis.
   ipcMain.handle('weakness:analyze', (_e, courseId: unknown) =>
     wrap(async () => {
       if (typeof courseId !== 'string') return err('Invalid courseId');
+      // Guard: AI provider must be configured
+      if (!(await isAiConfigured())) return err('AI provider not configured', 'AI_NOT_CONFIGURED');
       return ok(await analyzeWeaknesses(courseId));
     })
   );
