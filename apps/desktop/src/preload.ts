@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { shell, clipboard } from 'electron';
 import type { IpcResult } from './ipc/contracts';
 
 /**
@@ -29,14 +28,11 @@ const electronAPI = {
   getPaths: () => invoke('app:getPaths'),
   isDesktop: true,
   openStartupLogs: async () => {
-    const res = await invoke('app:getPaths');
-    if (res.ok && res.data && typeof (res.data as { logs?: unknown }).logs === 'string') {
-      await shell.openPath((res.data as { logs: string }).logs);
-    }
+    await invoke('app:openLogs');
   },
   copyStartupDiagnostics: async () => {
     const res = await invoke('diagnostics:get');
-    if (res.ok) clipboard.writeText(JSON.stringify(res.data, null, 2));
+    if (res.ok) await invoke('diagnostics:copyToClipboard', JSON.stringify(res.data, null, 2));
   },
   getSettings: () => invoke('settings:get'),
   updateSettings: (data: unknown) => invoke('settings:set', data),

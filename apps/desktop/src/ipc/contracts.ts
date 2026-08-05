@@ -22,6 +22,8 @@ export const IPC = {
   APP_VERSION: 'app:getVersion',
   APP_PLATFORM: 'app:getPlatform',
   APP_PATHS: 'app:getPaths',
+  APP_OPEN_LOGS: 'app:openLogs',
+  DIAGNOSTICS_COPY: 'diagnostics:copyToClipboard',
 
   // Settings                                   LOCAL
   SETTINGS_GET: 'settings:get',
