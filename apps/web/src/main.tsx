@@ -8,12 +8,27 @@ import './i18n';
 import './styles/index.css';
 
 // Global error logging
+console.log('[renderer] bootstrap:start');
+void window.electronAPI?.getDiagnostics().then(() => {
+  console.log('[renderer] electron bridge available');
+}).catch((error) => {
+  console.error('[renderer] electron bridge check failed', error);
+});
 window.onerror = (message, source, lineno, colno, error) => {
   console.error('[window.onerror]', { message, source, lineno, colno, error });
+  void window.electronAPI?.getDiagnostics().catch(() => undefined);
 };
 window.addEventListener('unhandledrejection', (event) => {
   console.error('[unhandledrejection]', event.reason);
 });
+window.addEventListener('error', (event) => {
+  if (event.target instanceof HTMLLinkElement || event.target instanceof HTMLScriptElement || event.target instanceof HTMLImageElement) {
+    console.error('[renderer] resource-load-failed', {
+      tag: event.target.tagName,
+      source: 'src' in event.target ? event.target.src : event.target.href,
+    });
+  }
+}, true);
 
 // Register service worker for offline support (skipped inside Electron)
 if ('serviceWorker' in navigator && !window.electronAPI) {
@@ -31,15 +46,26 @@ const queryClient = new QueryClient({
 });
 
 console.log('[main] Mounting React application');
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error('Renderer root element #root was not found');
+}
+const root = ReactDOM.createRoot(rootElement);
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </QueryClientProvider>
-    </ErrorBoundary>
-  </React.StrictMode>,
-);
+try {
+  root.render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </React.StrictMode>,
+  );
+  console.log('[renderer] bootstrap:rendered');
+} catch (error) {
+  console.error('[renderer] bootstrap:failed', error);
+  throw error;
+}
