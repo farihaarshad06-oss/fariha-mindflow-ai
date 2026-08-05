@@ -1,5 +1,7 @@
 import { app, BrowserWindow, shell, dialog, protocol } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import log from 'electron-log/main';
 import { initDatabase, closeDatabase } from './services/database';
 import { registerAllHandlers } from './ipc/handlers';
@@ -30,7 +32,9 @@ log.transports.file.transforms.push((msg) => {
 const isDev = !app.isPackaged;
 
 function resolveWebRoot(): string {
-  return path.join(process.resourcesPath, 'web');
+  const webRoot = path.join(process.resourcesPath, 'web');
+  log.info(`[main] resolveWebRoot → ${webRoot}`);
+  return webRoot;
 }
 
 // ── Single-instance lock ───────────────────────────────────────────────────
@@ -59,12 +63,48 @@ function createWindow(): void {
     show: false,
   });
 
+  // ── Renderer console errors ─────────────────────────────────────────────
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const levelName = ['verbose', 'info', 'warning', 'error'][level] ?? 'unknown';
+    log.info(`[renderer:${levelName}] ${message} (${sourceId}:${line})`);
+  });
+
+  // ── Load lifecycle ──────────────────────────────────────────────────────
+  mainWindow.webContents.on('did-finish-load', () => {
+    log.info('[main] Renderer did-finish-load ✓');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    log.error(`[main] Renderer did-fail-load: code=${errorCode} desc="${errorDescription}" url="${validatedURL}"`);
+    // Open DevTools automatically in dev builds, or when MINDFLOW_DEVTOOLS=1 is set,
+    // so developers can inspect what went wrong without needing a re-build.
+    if (isDev || process.env.MINDFLOW_DEVTOOLS === '1') {
+      mainWindow?.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     const webRoot = resolveWebRoot();
-    mainWindow.loadFile(path.join(webRoot, 'index.html'));
+    const indexHtml = path.join(webRoot, 'index.html');
+    log.info(`[main] Loading renderer from: ${indexHtml}`);
+
+    // Verify the file exists before loading so we surface a clear error.
+    if (!fs.existsSync(indexHtml)) {
+      log.error(`[main] index.html NOT FOUND at: ${indexHtml}`);
+      dialog.showErrorBox(
+        'Renderer Missing',
+        `index.html was not found at the expected location:\n${indexHtml}\n\nThe application cannot start.`
+      );
+      app.quit();
+      return;
+    }
+
+    mainWindow.loadFile(indexHtml).catch((err: unknown) => {
+      log.error('[main] loadFile error:', err instanceof Error ? err.message : String(err));
+    });
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -94,8 +134,15 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   if (!isDev) {
     protocol.registerFileProtocol('file', (request, callback) => {
-      const filePath = decodeURIComponent(request.url.replace('file:///', ''));
-      callback({ path: filePath });
+      // Use fileURLToPath for correct cross-platform decoding of file:// URLs
+      // (avoids the regex strip that breaks Windows drive letters, e.g. file:///C:/...).
+      try {
+        const filePath = fileURLToPath(request.url);
+        callback({ path: filePath });
+      } catch (err) {
+        log.error('[protocol:file] Failed to decode URL:', request.url, err instanceof Error ? err.message : String(err));
+        callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND
+      }
     });
   }
 
