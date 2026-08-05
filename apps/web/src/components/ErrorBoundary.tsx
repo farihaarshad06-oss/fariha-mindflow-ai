@@ -20,12 +20,12 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState({ errorInfo });
     console.error('[ErrorBoundary] React render error:', error, errorInfo);
   }
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       return (
         <div
