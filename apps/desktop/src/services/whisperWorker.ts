@@ -375,6 +375,12 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
       return;
     }
 
+    if (live && chunkId && chunksToProcess.every((chunk) => !fs.existsSync(chunk.filePath))) {
+      log.warn('[whisper] live chunk already finalized before worker picked it up', { jobId, chunkId });
+      await JobQueue.complete(jobId);
+      return;
+    }
+
     const audioDir = await getAudioDir();
     let globalSegmentIndex = 0;
 
