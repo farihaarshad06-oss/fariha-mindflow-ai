@@ -1,7 +1,6 @@
-import { app, BrowserWindow, shell, dialog, protocol } from 'electron';
+import { app, BrowserWindow, shell, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import log from 'electron-log/main';
 import { initDatabase, closeDatabase } from './services/database';
 import { registerAllHandlers } from './ipc/handlers';
@@ -237,20 +236,6 @@ function createWindow(): void {
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   recordStartupEvent('app-ready', 'app.whenReady');
-  if (!isDev) {
-    protocol.registerFileProtocol('file', (request, callback) => {
-      // Use fileURLToPath for correct cross-platform decoding of file:// URLs
-      // (avoids the regex strip that breaks Windows drive letters, e.g. file:///C:/...).
-      try {
-        const filePath = fileURLToPath(request.url);
-        callback({ path: filePath });
-      } catch (err) {
-        log.error('[protocol:file] Failed to decode URL:', request.url, err instanceof Error ? err.message : String(err));
-        callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND
-      }
-    });
-  }
-
   try {
     log.info('[main] Initialising database...');
     recordStartupEvent('database-init', 'start');

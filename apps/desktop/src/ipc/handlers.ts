@@ -41,7 +41,7 @@ import { testProviderConnection, isAiConfigured } from '../services/aiProviders'
 import { generateSummary, generateFlashcards, groundedChat, generateWeeklyQuiz, generateStudyPlan, analyzeWeaknesses } from '../services/learning';
 import { createBackup, previewRestore, restoreBackup, exportTranscript, exportFlashcards, exportFullData, exportDiagnostics } from '../services/backup';
 import { getPrisma } from '../services/database';
-import { app } from 'electron';
+import { app, shell, clipboard } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -96,6 +96,23 @@ export function registerAllHandlers(): void {
     })
   );
   log.info(`[ipc] registered ${IPC.APP_PATHS}`);
+
+  ipcMain.handle(IPC.APP_OPEN_LOGS, () =>
+    wrap(async () => {
+      await shell.openPath(app.getPath('logs'));
+      return ok(undefined);
+    })
+  );
+  log.info(`[ipc] registered ${IPC.APP_OPEN_LOGS}`);
+
+  ipcMain.handle(IPC.DIAGNOSTICS_COPY, (_e, raw: unknown) =>
+    wrap(async () => {
+      const text = typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2);
+      clipboard.writeText(text);
+      return ok(undefined);
+    })
+  );
+  log.info(`[ipc] registered ${IPC.DIAGNOSTICS_COPY}`);
 
   // ── Settings ──────────────────────────────────────────────────────────
   ipcMain.handle(IPC.SETTINGS_GET, () =>
