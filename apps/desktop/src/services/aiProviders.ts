@@ -516,6 +516,36 @@ export async function aiRequest<T extends ZodTypeAny>(
   return { data, inputTokens, outputTokens, estimatedCostCents, cacheHit: false, model, provider: provider.providerType };
 }
 
+// ── AI configured check ───────────────────────────────────────────────────
+
+/**
+ * Returns true when the given provider exists, is enabled, and has a secret
+ * key stored in the OS keychain. All five AI-only IPC handlers call this
+ * before invoking any learning function so that the app stays fully usable
+ * without a configured AI provider.
+ *
+ * Pass `providerId = undefined` to check the current default provider.
+ */
+export async function isAiConfigured(providerId?: string): Promise<boolean> {
+  const db = getPrisma();
+  let resolvedId = providerId;
+
+  if (!resolvedId) {
+    const settings = await SettingsService.get();
+    resolvedId = settings.defaultAiProvider ?? undefined;
+  }
+
+  if (!resolvedId) {
+    // Try to find any enabled provider with a stored key
+    const providers = await db.aiProvider.findMany({ where: { enabled: true } });
+    return providers.some((p) => SecretsService.hasSecret(`provider.${p.id}`));
+  }
+
+  const provider = await db.aiProvider.findUnique({ where: { id: resolvedId } });
+  if (!provider || !provider.enabled) return false;
+  return SecretsService.hasSecret(`provider.${resolvedId}`);
+}
+
 // ── Provider connection test ───────────────────────────────────────────────
 
 export async function testProviderConnection(providerId: string): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {

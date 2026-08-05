@@ -8,30 +8,38 @@ import { z } from 'zod';
 import path from 'node:path';
 
 // ── Channel names ──────────────────────────────────────────────────────────
+//
+// Each channel is annotated with its locality contract:
+//   LOCAL        — handled entirely in the main process with no network I/O.
+//   AI_REQUIRED  — calls the configured AI provider; requires a stored API key
+//                  (returns err code 'AI_NOT_CONFIGURED' when no key is set).
+//
+// The application must remain FULLY functional offline. Only the five
+// AI_REQUIRED channels produce cloud traffic; every other operation is local.
 
 export const IPC = {
-  // App
+  // App                                        LOCAL
   APP_VERSION: 'app:getVersion',
   APP_PLATFORM: 'app:getPlatform',
   APP_PATHS: 'app:getPaths',
 
-  // Settings
+  // Settings                                   LOCAL
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
 
-  // Secrets (safeStorage)
+  // Secrets (safeStorage)                      LOCAL
   SECRET_SET: 'secret:set',
   SECRET_GET: 'secret:get',
   SECRET_DELETE: 'secret:delete',
   SECRET_HAS: 'secret:has',
 
-  // Audio / Recording
+  // Audio / Recording                          LOCAL
   AUDIO_SAVE: 'audio:save',
   AUDIO_LIST: 'audio:list',
   AUDIO_DELETE: 'audio:delete',
   AUDIO_OPEN_DIALOG: 'audio:openDialog',
 
-  // Recording sessions
+  // Recording sessions                         LOCAL
   RECORDING_START: 'recording:start',
   RECORDING_PAUSE: 'recording:pause',
   RECORDING_RESUME: 'recording:resume',
@@ -42,82 +50,92 @@ export const IPC = {
   RECORDING_GET_MICROPHONES: 'recording:getMicrophones',
   RECORDING_CHECK_DISK: 'recording:checkDisk',
 
-  // Courses
+  // Courses                                    LOCAL
   COURSE_LIST: 'course:list',
   COURSE_GET: 'course:get',
   COURSE_CREATE: 'course:create',
   COURSE_UPDATE: 'course:update',
   COURSE_DELETE: 'course:delete',
 
-  // Lectures
+  // Lectures                                   LOCAL
   LECTURE_LIST: 'lecture:list',
   LECTURE_GET: 'lecture:get',
   LECTURE_CREATE: 'lecture:create',
   LECTURE_UPDATE: 'lecture:update',
   LECTURE_DELETE: 'lecture:delete',
 
-  // Transcription
+  // Transcription                              LOCAL
   TRANSCRIPT_LIST: 'transcript:list',
   TRANSCRIPT_EDIT_SEGMENT: 'transcript:editSegment',
 
-  // Whisper model manager
+  // Whisper model manager                      LOCAL
   MODEL_LIST: 'model:list',
   MODEL_DOWNLOAD_START: 'model:downloadStart',
   MODEL_DOWNLOAD_CANCEL: 'model:downloadCancel',
   MODEL_DELETE: 'model:delete',
   MODEL_GET_ACTIVE: 'model:getActive',
 
-  // Jobs
+  // Jobs                                       LOCAL
   JOB_LIST: 'job:list',
   JOB_CANCEL: 'job:cancel',
   JOB_RETRY: 'job:retry',
 
-  // AI providers
+  // AI providers (config/test only)            LOCAL (config) / AI_REQUIRED (test)
   PROVIDER_LIST: 'provider:list',
   PROVIDER_UPSERT: 'provider:upsert',
   PROVIDER_DELETE: 'provider:delete',
   PROVIDER_TEST: 'provider:test',
 
-  // Usage
+  // Usage                                      LOCAL
   USAGE_SUMMARY: 'usage:summary',
   USAGE_RESET: 'usage:reset',
 
-  // Summaries / flashcards / chat
-  SUMMARY_GET: 'summary:get',
+  // Flashcard review (SM-2)                    LOCAL
   FLASHCARD_LIST: 'flashcard:list',
   FLASHCARD_REVIEW: 'flashcard:review',
-  CHAT_SEND: 'chat:send',
+
+  // Chat history                               LOCAL
   CHAT_HISTORY: 'chat:history',
 
-  // Quiz
+  // Quiz list / submit / get                   LOCAL
   QUIZ_LIST: 'quiz:list',
   QUIZ_GET: 'quiz:get',
   QUIZ_SUBMIT: 'quiz:submit',
 
-  // Backup / restore / export
+  // Backup / restore / export                  LOCAL
   BACKUP_CREATE: 'backup:create',
   BACKUP_RESTORE: 'backup:restore',
   BACKUP_LIST: 'backup:list',
   EXPORT_DATA: 'export:data',
   DIAGNOSTICS_GET: 'diagnostics:get',
 
-  // Live streaming transcription
+  // Live streaming transcription               LOCAL
   RECORDING_CHUNK_TRANSCRIBE_NOW: 'recording:chunkTranscribeNow',
   TRANSCRIPT_LIVE: 'transcript:live',
 
-  // Whisper transcription trigger
+  // Whisper transcription trigger              LOCAL (on-device whisper.cpp)
   WHISPER_TRANSCRIBE_NOW: 'whisper:transcribeNow',
 
-  // Flashcard generation
+  // ── AI_REQUIRED features ────────────────────────────────────────────────
+  // These five channels are the ONLY ones that call cloud AI APIs.
+  // All return err({ code: 'AI_NOT_CONFIGURED' }) when no key is set.
+
+  /** AI_REQUIRED — generate concise lecture summary from transcript. */
+  SUMMARY_GET: 'summary:get',
+
+  /** AI_REQUIRED — generate study flashcards from lecture transcript. */
   FLASHCARD_GENERATE: 'flashcard:generate',
 
-  // Quiz generation
+  /** AI_REQUIRED — generate a quiz from course transcripts. */
   QUIZ_GENERATE: 'quiz:generate',
 
-  // Study plan
+  /** AI_REQUIRED — answer questions about lectures (study assistant chat). */
+  CHAT_SEND: 'chat:send',
+
+  /** AI_REQUIRED — generate personalized study recommendations. */
   STUDY_PLAN_GET: 'studyplan:get',
 
-  // Weakness analysis
+  /** AI_REQUIRED — identify weak topics using AI-driven analysis. */
   WEAKNESS_ANALYZE: 'weakness:analyze',
 } as const;
 

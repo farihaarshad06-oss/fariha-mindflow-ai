@@ -51,7 +51,7 @@ export const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
 
   LLM_PROVIDER: z.enum(['mock', 'azure-openai', 'openai']).default('mock'),
-  TRANSCRIPTION_PROVIDER: z.enum(['mock', 'azure-speech', 'openai']).default('mock'),
+  TRANSCRIPTION_PROVIDER: z.enum(['mock', 'whisper', 'openai']).default('mock'),
 
   APPLICATIONINSIGHTS_CONNECTION_STRING: z.string().optional(),
 
