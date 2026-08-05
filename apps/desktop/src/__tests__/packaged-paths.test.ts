@@ -182,3 +182,75 @@ describe('database.ts — packaged migrations path', () => {
     expect(src).toContain("process.resourcesPath, 'prisma', 'migrations'");
   });
 });
+
+// ── Renderer load path tests ───────────────────────────────────────────────
+
+describe('main.ts — packaged renderer path', () => {
+  /** Strip single-line and inline comments so assertions match only executable code. */
+  function stripComments(src: string): string {
+    return src
+      .split('\n')
+      .filter((line) => {
+        const t = line.trim();
+        return t !== '' && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+      })
+      .join('\n');
+  }
+
+  it('loads renderer from process.resourcesPath/web/index.html when packaged', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../main.ts'),
+      'utf8',
+    );
+    const code = stripComments(src);
+    // Must use process.resourcesPath + 'web' for the renderer in packaged mode
+    expect(code).toContain("process.resourcesPath, 'web'");
+    expect(code).toContain("'index.html'");
+  });
+
+  it('does not override the built-in file:// protocol handler', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../main.ts'),
+      'utf8',
+    );
+    const code = stripComments(src);
+    // protocol.registerFileProtocol overrides Electron's built-in file handler
+    // and breaks loadFile() in Electron 25+. It must not be used.
+    expect(code).not.toContain('registerFileProtocol');
+  });
+
+  it('uses loadFile (not loadURL) for the packaged renderer', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../main.ts'),
+      'utf8',
+    );
+    const code = stripComments(src);
+    // loadFile is used in the packaged branch; loadURL is only for dev
+    expect(code).toContain('.loadFile(');
+  });
+});
+
+describe('electron-builder config — extraResources web layout', () => {
+  it('copies web/dist into resources/web', () => {
+    const pkgPath = path.join(__dirname, '../../package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+      build?: { extraResources?: Array<{ from: string; to: string }> };
+    };
+    const extras: Array<{ from: string; to: string }> = pkg.build?.extraResources ?? [];
+    const webEntry = extras.find((e) => e.to === 'web');
+    expect(webEntry).toBeDefined();
+    // Source must be the web app's dist output
+    expect(webEntry?.from).toContain('web');
+    expect(webEntry?.from).toContain('dist');
+  });
+});
+
+describe('vite.config.ts — base path for Electron', () => {
+  it('sets base to "./" for relative asset paths when loaded via loadFile', () => {
+    const viteCfgPath = path.join(__dirname, '../../../web/vite.config.ts');
+    const src = fs.readFileSync(viteCfgPath, 'utf8');
+    // base: './' ensures all asset URLs are relative so they resolve correctly
+    // when Electron loads index.html from disk via loadFile()
+    expect(src).toContain("base: './'");
+  });
+});
