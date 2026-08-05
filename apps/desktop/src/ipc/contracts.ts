@@ -117,7 +117,7 @@ export const IPC = {
   WHISPER_TRANSCRIBE_NOW: 'whisper:transcribeNow',
 
   // ── AI_REQUIRED features ────────────────────────────────────────────────
-  // These five channels are the ONLY ones that call cloud AI APIs.
+  // These six channels are the ONLY ones that call cloud AI APIs.
   // All return err({ code: 'AI_NOT_CONFIGURED' }) when no key is set.
 
   /** AI_REQUIRED — generate concise lecture summary from transcript. */

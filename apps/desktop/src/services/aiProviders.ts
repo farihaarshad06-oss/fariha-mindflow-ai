@@ -520,7 +520,7 @@ export async function aiRequest<T extends ZodTypeAny>(
 
 /**
  * Returns true when the given provider exists, is enabled, and has a secret
- * key stored in the OS keychain. All five AI-only IPC handlers call this
+ * key stored in the OS keychain. All six AI-only IPC handlers call this
  * before invoking any learning function so that the app stays fully usable
  * without a configured AI provider.
  *

@@ -83,9 +83,9 @@ No component may call `aiRequest()` directly. Every AI IPC handler checks `isAiC
 
 
 - The web build is embedded inside the installer as a static asset (`extraResources/web/`).
-- All lecture/course data is persisted in `localStorage` (IndexedDB for binary audio).
-- The `window.electronAPI.saveAudio` / `listAudio` / `deleteAudio` IPC calls store audio files in the OS user-data folder (`%APPDATA%/Fariha MindFlow AI/audio` on Windows, `~/Library/Application Support/…` on macOS, `~/.config/…` on Linux).
-- No external network calls are made in the packaged build.
+- All lecture/course/transcript data is persisted in SQLite via Prisma (stored in the OS user-data folder).
+- Audio chunks are written directly to disk under `<userData>/audio/` via the `recording:chunkSave` IPC handler.
+- No external network calls are made in the packaged build (except for the opt-in AI features described above).
 
 ## Audio file upload
 
