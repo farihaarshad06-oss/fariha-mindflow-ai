@@ -63,6 +63,12 @@ export interface ElectronAPI {
   getDiagnostics(): Promise<IpcResult<unknown>>;
   onModelDownloadProgress(listener: (data: { modelId: string; downloaded: number; total: number }) => void): () => void;
   onRecordingError(listener: (data: { sessionId: string; code: string; message: string }) => void): () => void;
+  onLiveTranscript(listener: (data: {
+    lectureId: string;
+    segments: Array<{ segmentIndex: number; text: string; timestampStart: number; timestampEnd: number }>;
+    chunkIndex?: number;
+    partial: boolean;
+  }) => void): () => void;
 }
 
 declare global {

@@ -160,6 +160,7 @@ app.whenReady().then(async () => {
 
     log.info('[main] Starting Whisper worker...');
     WhisperWorker.start();
+    WhisperWorker.startLiveTick();
 
     log.info('[main] Applying settings...');
     await SettingsService.get(); // ensure defaults exist

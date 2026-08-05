@@ -294,9 +294,11 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
     audioChunkId?: string;
     language?: string;
     modelId?: string;
+    live?: boolean;
+    startOffsetMs?: number;
   };
 
-  const { lectureId, audioChunkId, language = 'auto', modelId } = payload;
+  const { lectureId, audioChunkId, language = 'auto', modelId, live = false } = payload;
   if (!lectureId) {
     await JobQueue.fail(jobId, 'INVALID_PAYLOAD', 'Missing lectureId');
     return;
@@ -445,15 +447,30 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
         await TranscriptService.bulkInsert(lectureId, segmentsWithOffset);
       }
 
+      // In live mode: broadcast partial transcript and clean up the processed chunk
+      if (live) {
+        broadcast('transcript:live', {
+          lectureId,
+          segments: segmentsWithOffset,
+          chunkIndex: i,
+          partial: true,
+        });
+        await cleanupChunk(chunk.id, safeInputPath);
+      }
+
       log.info(`[whisper] Chunk ${chunk.id}: ${segments.length} segments`);
     }
 
     if (!signal.aborted) {
-      // Update lecture state
-      await db.lecture.update({
-        where: { id: lectureId },
-        data: { state: 'READY' },
-      });
+      if (!live) {
+        // Update lecture state only on the final full-pass (not live chunk jobs)
+        await db.lecture.update({
+          where: { id: lectureId },
+          data: { state: 'READY' },
+        });
+        // Signal renderer that the full final-pass transcription is complete
+        broadcast('transcript:live', { lectureId, segments: [], partial: false });
+      }
 
       await JobQueue.complete(jobId);
       broadcast('job:progress', { jobId, lectureId, status: 'DONE', pct: 100 });
@@ -488,6 +505,29 @@ async function processTranscribeJob(job: Awaited<ReturnType<typeof JobQueue.clai
   }
 }
 
+// ── Live chunk cleanup ─────────────────────────────────────────────────────
+
+/**
+ * Mark a processed live chunk as DELETED in SQLite and remove its file from
+ * disk to keep memory usage low. Errors are non-fatal — we just log them.
+ */
+async function cleanupChunk(chunkId: string, filePath: string): Promise<void> {
+  try {
+    await getPrisma().audioChunk.update({
+      where: { id: chunkId },
+      data: { state: 'DELETED' },
+    });
+  } catch (e) {
+    log.warn('[whisper] cleanupChunk DB update failed:', e instanceof Error ? e.message : String(e));
+  }
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    log.info(`[whisper] Deleted processed live chunk: ${path.basename(filePath)}`);
+  } catch (e) {
+    log.warn('[whisper] cleanupChunk file delete failed:', e instanceof Error ? e.message : String(e));
+  }
+}
+
 // ── SHA-256 file verification ──────────────────────────────────────────────
 
 async function verifyFileSha256(filePath: string, expected: string): Promise<boolean> {
@@ -502,8 +542,12 @@ async function verifyFileSha256(filePath: string, expected: string): Promise<boo
 
 // ── Worker loop ────────────────────────────────────────────────────────────
 
+const LIVE_POLL_INTERVAL_MS = 1_000; // faster poll for live jobs
+
 let workerRunning = false;
 let workerTimer: ReturnType<typeof setTimeout> | null = null;
+let liveWorkerRunning = false;
+let liveWorkerTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function tick(): Promise<void> {
   if (!workerRunning) return;
@@ -521,6 +565,51 @@ async function tick(): Promise<void> {
   }
 }
 
+/**
+ * Live tick — polls every second for high-priority live TRANSCRIBE jobs only.
+ * Runs concurrently with the main tick so live chunks are never blocked by
+ * longer regular jobs (e.g. a full-session final-pass transcription).
+ */
+async function liveTick(): Promise<void> {
+  if (!liveWorkerRunning) return;
+  try {
+    // Claim a job whose payload contains the live flag by scanning pending jobs
+    const db = getPrisma();
+    const now = new Date();
+    const liveJob = await db.$transaction(async (tx) => {
+      const candidate = await tx.processingJob.findFirst({
+        where: {
+          jobType: 'TRANSCRIBE',
+          status: 'PENDING',
+          scheduledAfter: { lte: now },
+          payload: { contains: '"live":true' },
+        },
+        orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      });
+      if (!candidate) return null;
+      return tx.processingJob.update({
+        where: { id: candidate.id, status: 'PENDING' },
+        data: {
+          status: 'RUNNING',
+          lockedBy: `live-${process.pid}-${Date.now()}`,
+          lockedAt: now,
+          startedAt: candidate.startedAt ?? now,
+        },
+      });
+    });
+
+    if (liveJob) {
+      const record = JobQueue._toRecord(liveJob);
+      await processTranscribeJob(record);
+    }
+  } catch (err) {
+    log.error('[whisper] Live tick error:', err instanceof Error ? err.message : String(err));
+  }
+  if (liveWorkerRunning) {
+    liveWorkerTimer = setTimeout(liveTick, LIVE_POLL_INTERVAL_MS);
+  }
+}
+
 export const WhisperWorker = {
   start(): void {
     if (workerRunning) return;
@@ -531,9 +620,18 @@ export const WhisperWorker = {
     workerTimer = setTimeout(() => { void tick(); }, POLL_INTERVAL_MS);
   },
 
+  startLiveTick(): void {
+    if (liveWorkerRunning) return;
+    liveWorkerRunning = true;
+    log.info('[whisper] Live tick started');
+    liveWorkerTimer = setTimeout(() => { void liveTick(); }, LIVE_POLL_INTERVAL_MS);
+  },
+
   stop(): void {
     workerRunning = false;
     if (workerTimer) { clearTimeout(workerTimer); workerTimer = null; }
+    liveWorkerRunning = false;
+    if (liveWorkerTimer) { clearTimeout(liveWorkerTimer); liveWorkerTimer = null; }
     log.info('[whisper] Worker stopped');
   },
 
