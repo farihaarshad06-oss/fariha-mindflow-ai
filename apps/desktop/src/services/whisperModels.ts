@@ -24,7 +24,7 @@ import { getPrisma } from './database';
 export interface ModelDef {
   id: string;
   name: string;
-  sizeBytes: number;
+  sizeBytes: bigint;
   downloadUrl: string;
   sha256: string;
 }
@@ -34,35 +34,35 @@ export const WHISPER_MODELS: ModelDef[] = [
   {
     id: 'tiny',
     name: 'Whisper Tiny (75 MB)',
-    sizeBytes: 75_000_000,
+    sizeBytes: 75_000_000n,
     downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
     sha256: 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21',
   },
   {
     id: 'base',
     name: 'Whisper Base (148 MB)',
-    sizeBytes: 148_000_000,
+    sizeBytes: 148_000_000n,
     downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
     sha256: '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe',
   },
   {
     id: 'small',
     name: 'Whisper Small (488 MB)',
-    sizeBytes: 488_000_000,
+    sizeBytes: 488_000_000n,
     downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
     sha256: '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b',
   },
   {
     id: 'medium',
     name: 'Whisper Medium (1.5 GB)',
-    sizeBytes: 1_533_000_000,
+    sizeBytes: 1_533_000_000n,
     downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
     sha256: '6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208',
   },
   {
     id: 'large-v3',
     name: 'Whisper Large v3 (3.1 GB)',
-    sizeBytes: 3_094_000_000,
+    sizeBytes: 3_094_000_000n,
     downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
     sha256: 'ad82bf6a9043ceed055076d0fd39f5f186ff8062301f7cd34f3b8a0e22c3a7a1',
   },
@@ -121,7 +121,13 @@ export const WhisperModelManager = {
 
   async list() {
     const db = getPrisma();
-    return db.whisperModel.findMany({ orderBy: { sizeBytes: 'asc' } });
+    const models = await db.whisperModel.findMany({ orderBy: { sizeBytes: 'asc' } });
+    // Bigint values are not serializable via Electron structured clone; convert to number.
+    return models.map((m) => ({
+      ...m,
+      sizeBytes: Number(m.sizeBytes),
+      downloadedBytes: Number(m.downloadedBytes),
+    }));
   },
 
   async startDownload(modelId: string): Promise<void> {
@@ -176,7 +182,7 @@ export const WhisperModelManager = {
           reject(new Error(`HTTP ${res.statusCode}`));
           return;
         }
-        const total = model.sizeBytes;
+        const total = Number(model.sizeBytes);
         let downloaded = startByte;
         const writeStream = fs.createWriteStream(tmpPath, { flags: startByte > 0 ? 'a' : 'w' });
 
@@ -193,7 +199,7 @@ export const WhisperModelManager = {
           // Persist progress
           void db.whisperModel.update({
             where: { id: modelId },
-            data: { downloadedBytes: downloaded },
+            data: { downloadedBytes: BigInt(downloaded) },
           }).catch(() => {});
         });
 
@@ -212,7 +218,7 @@ export const WhisperModelManager = {
       const valid = await verifyIntegrity(tmpPath, model.sha256);
       if (!valid) {
         fs.unlinkSync(tmpPath);
-        await db.whisperModel.update({ where: { id: modelId }, data: { state: 'ERROR', downloadedBytes: 0 } });
+        await db.whisperModel.update({ where: { id: modelId }, data: { state: 'ERROR', downloadedBytes: 0n } });
         throw new Error(`Integrity check failed for model ${modelId}`);
       }
 
@@ -248,7 +254,7 @@ export const WhisperModelManager = {
     }
     await db.whisperModel.update({
       where: { id: modelId },
-      data: { state: 'AVAILABLE', localPath: null, downloadedAt: null, downloadedBytes: 0 },
+      data: { state: 'AVAILABLE', localPath: null, downloadedAt: null, downloadedBytes: 0n },
     });
     log.info(`[whisper] Deleted model ${modelId}`);
   },
