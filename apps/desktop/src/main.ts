@@ -43,6 +43,54 @@ if (!gotLock) {
   app.quit();
 }
 
+// ── Diagnostic screen ──────────────────────────────────────────────────────
+/**
+ * Loads an inline HTML diagnostic page into the given window so the user
+ * always sees a readable error instead of a blank white screen.
+ */
+function showDiagnosticScreen(win: BrowserWindow | null, title: string, message: string): void {
+  if (!win || win.isDestroyed()) return;
+  const logPath = log.transports.file.getFile?.()?.path ?? 'See electron-log file';
+  const escapedTitle = title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escapedMessage = message.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escapedLogPath = logPath.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Startup Error — Fariha MindFlow AI</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
+    .card{max-width:640px;width:100%}
+    h1{color:#b91c1c;font-size:1.5rem;margin-bottom:.5rem}
+    p{color:#374151;margin-bottom:1rem;line-height:1.5}
+    pre{background:#f3f4f6;border-radius:6px;padding:1rem;overflow-x:auto;font-size:.78rem;white-space:pre-wrap;word-break:break-all;margin-bottom:1rem}
+    .actions{display:flex;gap:.75rem;flex-wrap:wrap}
+    button{padding:.5rem 1.25rem;border:none;border-radius:6px;cursor:pointer;font-size:.9rem}
+    .reload{background:#2563eb;color:#fff}
+    .copy{background:#e5e7eb;color:#111}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>&#9888; ${escapedTitle}</h1>
+    <p>The application encountered an error during startup. Please reload or check the log file.</p>
+    <pre id="details">${escapedMessage}\n\nLog file: ${escapedLogPath}</pre>
+    <div class="actions">
+      <button class="reload" onclick="location.reload()">&#8635; Reload</button>
+      <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('details').textContent).catch(()=>{})">&#128203; Copy diagnostics</button>
+    </div>
+  </div>
+</body>
+</html>`;
+  win.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch((err: unknown) => {
+    log.error('[main] Failed to load diagnostic screen:', err instanceof Error ? err.message : String(err));
+  });
+  win.show();
+}
+
 // ── Window management ──────────────────────────────────────────────────────
 let mainWindow: BrowserWindow | null = null;
 
@@ -69,6 +117,16 @@ function createWindow(): void {
     log.info(`[renderer:${levelName}] ${message} (${sourceId}:${line})`);
   });
 
+  // ── Renderer process crash → show diagnostic screen instead of blank window ──
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    log.error(`[main] Renderer process gone: reason=${details.reason} exitCode=${details.exitCode}`);
+    showDiagnosticScreen(
+      mainWindow,
+      'Renderer Crash',
+      `The renderer process terminated unexpectedly.\nReason: ${details.reason}\nExit code: ${details.exitCode}`,
+    );
+  });
+
   // ── Load lifecycle ──────────────────────────────────────────────────────
   mainWindow.webContents.on('did-finish-load', () => {
     log.info('[main] Renderer did-finish-load ✓');
@@ -81,6 +139,11 @@ function createWindow(): void {
     if (isDev || process.env.MINDFLOW_DEVTOOLS === '1') {
       mainWindow?.webContents.openDevTools({ mode: 'detach' });
     }
+    showDiagnosticScreen(
+      mainWindow,
+      'Page Load Failed',
+      `Failed to load the application.\nError ${errorCode}: ${errorDescription}\nURL: ${validatedURL}`,
+    );
   });
 
   if (isDev) {
