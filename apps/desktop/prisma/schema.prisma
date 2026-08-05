@@ -242,12 +242,12 @@ model QuizAnswer {
 model WhisperModel {
   id              String    @id // e.g. "tiny", "base", "small", "medium", "large-v3"
   name            String
-  sizeBytes       Int
+  sizeBytes       BigInt
   downloadUrl     String
   sha256          String    // expected hash for integrity
   localPath       String?   // null = not downloaded
   state           String    @default("AVAILABLE") // AVAILABLE|DOWNLOADING|READY|ERROR
-  downloadedBytes Int       @default(0)
+  downloadedBytes BigInt    @default(0)
   downloadedAt    DateTime?
   lastUsedAt      DateTime?
   createdAt       DateTime  @default(now())

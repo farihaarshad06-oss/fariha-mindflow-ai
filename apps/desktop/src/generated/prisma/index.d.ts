@@ -16228,24 +16228,24 @@ export namespace Prisma {
   }
 
   export type WhisperModelAvgAggregateOutputType = {
-    sizeBytes: number | null
-    downloadedBytes: number | null
+    sizeBytes: bigint | null
+    downloadedBytes: bigint | null
   }
 
   export type WhisperModelSumAggregateOutputType = {
-    sizeBytes: number | null
-    downloadedBytes: number | null
+    sizeBytes: bigint | null
+    downloadedBytes: bigint | null
   }
 
   export type WhisperModelMinAggregateOutputType = {
     id: string | null
     name: string | null
-    sizeBytes: number | null
+    sizeBytes: bigint | null
     downloadUrl: string | null
     sha256: string | null
     localPath: string | null
     state: string | null
-    downloadedBytes: number | null
+    downloadedBytes: bigint | null
     downloadedAt: Date | null
     lastUsedAt: Date | null
     createdAt: Date | null
@@ -16255,12 +16255,12 @@ export namespace Prisma {
   export type WhisperModelMaxAggregateOutputType = {
     id: string | null
     name: string | null
-    sizeBytes: number | null
+    sizeBytes: bigint | null
     downloadUrl: string | null
     sha256: string | null
     localPath: string | null
     state: string | null
-    downloadedBytes: number | null
+    downloadedBytes: bigint | null
     downloadedAt: Date | null
     lastUsedAt: Date | null
     createdAt: Date | null
@@ -16429,12 +16429,12 @@ export namespace Prisma {
   export type WhisperModelGroupByOutputType = {
     id: string
     name: string
-    sizeBytes: number
+    sizeBytes: bigint
     downloadUrl: string
     sha256: string
     localPath: string | null
     state: string
-    downloadedBytes: number
+    downloadedBytes: bigint
     downloadedAt: Date | null
     lastUsedAt: Date | null
     createdAt: Date
@@ -16512,12 +16512,12 @@ export namespace Prisma {
     scalars: $Extensions.GetPayloadResult<{
       id: string
       name: string
-      sizeBytes: number
+      sizeBytes: bigint
       downloadUrl: string
       sha256: string
       localPath: string | null
       state: string
-      downloadedBytes: number
+      downloadedBytes: bigint
       downloadedAt: Date | null
       lastUsedAt: Date | null
       createdAt: Date
@@ -16917,12 +16917,12 @@ export namespace Prisma {
   interface WhisperModelFieldRefs {
     readonly id: FieldRef<"WhisperModel", 'String'>
     readonly name: FieldRef<"WhisperModel", 'String'>
-    readonly sizeBytes: FieldRef<"WhisperModel", 'Int'>
+    readonly sizeBytes: FieldRef<"WhisperModel", 'BigInt'>
     readonly downloadUrl: FieldRef<"WhisperModel", 'String'>
     readonly sha256: FieldRef<"WhisperModel", 'String'>
     readonly localPath: FieldRef<"WhisperModel", 'String'>
     readonly state: FieldRef<"WhisperModel", 'String'>
-    readonly downloadedBytes: FieldRef<"WhisperModel", 'Int'>
+    readonly downloadedBytes: FieldRef<"WhisperModel", 'BigInt'>
     readonly downloadedAt: FieldRef<"WhisperModel", 'DateTime'>
     readonly lastUsedAt: FieldRef<"WhisperModel", 'DateTime'>
     readonly createdAt: FieldRef<"WhisperModel", 'DateTime'>
@@ -23382,6 +23382,12 @@ export namespace Prisma {
   export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
     
 
+  /**
+   * Reference to a field of type 'BigInt'
+   */
+  export type BigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt'>
+    
+
 
   /**
    * Reference to a field of type 'Boolean'
@@ -24504,12 +24510,12 @@ export namespace Prisma {
     NOT?: WhisperModelWhereInput | WhisperModelWhereInput[]
     id?: StringFilter<"WhisperModel"> | string
     name?: StringFilter<"WhisperModel"> | string
-    sizeBytes?: IntFilter<"WhisperModel"> | number
+    sizeBytes?: BigIntFilter<"WhisperModel"> | bigint | number
     downloadUrl?: StringFilter<"WhisperModel"> | string
     sha256?: StringFilter<"WhisperModel"> | string
     localPath?: StringNullableFilter<"WhisperModel"> | string | null
     state?: StringFilter<"WhisperModel"> | string
-    downloadedBytes?: IntFilter<"WhisperModel"> | number
+    downloadedBytes?: BigIntFilter<"WhisperModel"> | bigint | number
     downloadedAt?: DateTimeNullableFilter<"WhisperModel"> | Date | string | null
     lastUsedAt?: DateTimeNullableFilter<"WhisperModel"> | Date | string | null
     createdAt?: DateTimeFilter<"WhisperModel"> | Date | string
@@ -24537,12 +24543,12 @@ export namespace Prisma {
     OR?: WhisperModelWhereInput[]
     NOT?: WhisperModelWhereInput | WhisperModelWhereInput[]
     name?: StringFilter<"WhisperModel"> | string
-    sizeBytes?: IntFilter<"WhisperModel"> | number
+    sizeBytes?: BigIntFilter<"WhisperModel"> | bigint | number
     downloadUrl?: StringFilter<"WhisperModel"> | string
     sha256?: StringFilter<"WhisperModel"> | string
     localPath?: StringNullableFilter<"WhisperModel"> | string | null
     state?: StringFilter<"WhisperModel"> | string
-    downloadedBytes?: IntFilter<"WhisperModel"> | number
+    downloadedBytes?: BigIntFilter<"WhisperModel"> | bigint | number
     downloadedAt?: DateTimeNullableFilter<"WhisperModel"> | Date | string | null
     lastUsedAt?: DateTimeNullableFilter<"WhisperModel"> | Date | string | null
     createdAt?: DateTimeFilter<"WhisperModel"> | Date | string
@@ -24575,12 +24581,12 @@ export namespace Prisma {
     NOT?: WhisperModelScalarWhereWithAggregatesInput | WhisperModelScalarWhereWithAggregatesInput[]
     id?: StringWithAggregatesFilter<"WhisperModel"> | string
     name?: StringWithAggregatesFilter<"WhisperModel"> | string
-    sizeBytes?: IntWithAggregatesFilter<"WhisperModel"> | number
+    sizeBytes?: BigIntWithAggregatesFilter<"WhisperModel"> | bigint | number
     downloadUrl?: StringWithAggregatesFilter<"WhisperModel"> | string
     sha256?: StringWithAggregatesFilter<"WhisperModel"> | string
     localPath?: StringNullableWithAggregatesFilter<"WhisperModel"> | string | null
     state?: StringWithAggregatesFilter<"WhisperModel"> | string
-    downloadedBytes?: IntWithAggregatesFilter<"WhisperModel"> | number
+    downloadedBytes?: BigIntWithAggregatesFilter<"WhisperModel"> | bigint | number
     downloadedAt?: DateTimeNullableWithAggregatesFilter<"WhisperModel"> | Date | string | null
     lastUsedAt?: DateTimeNullableWithAggregatesFilter<"WhisperModel"> | Date | string | null
     createdAt?: DateTimeWithAggregatesFilter<"WhisperModel"> | Date | string
@@ -26286,12 +26292,12 @@ export namespace Prisma {
   export type WhisperModelCreateInput = {
     id: string
     name: string
-    sizeBytes: number
+    sizeBytes: bigint | number
     downloadUrl: string
     sha256: string
     localPath?: string | null
     state?: string
-    downloadedBytes?: number
+    downloadedBytes?: bigint | number
     downloadedAt?: Date | string | null
     lastUsedAt?: Date | string | null
     createdAt?: Date | string
@@ -26301,12 +26307,12 @@ export namespace Prisma {
   export type WhisperModelUncheckedCreateInput = {
     id: string
     name: string
-    sizeBytes: number
+    sizeBytes: bigint | number
     downloadUrl: string
     sha256: string
     localPath?: string | null
     state?: string
-    downloadedBytes?: number
+    downloadedBytes?: bigint | number
     downloadedAt?: Date | string | null
     lastUsedAt?: Date | string | null
     createdAt?: Date | string
@@ -26316,12 +26322,12 @@ export namespace Prisma {
   export type WhisperModelUpdateInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
-    sizeBytes?: IntFieldUpdateOperationsInput | number
+    sizeBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadUrl?: StringFieldUpdateOperationsInput | string
     sha256?: StringFieldUpdateOperationsInput | string
     localPath?: NullableStringFieldUpdateOperationsInput | string | null
     state?: StringFieldUpdateOperationsInput | string
-    downloadedBytes?: IntFieldUpdateOperationsInput | number
+    downloadedBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     lastUsedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -26331,12 +26337,12 @@ export namespace Prisma {
   export type WhisperModelUncheckedUpdateInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
-    sizeBytes?: IntFieldUpdateOperationsInput | number
+    sizeBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadUrl?: StringFieldUpdateOperationsInput | string
     sha256?: StringFieldUpdateOperationsInput | string
     localPath?: NullableStringFieldUpdateOperationsInput | string | null
     state?: StringFieldUpdateOperationsInput | string
-    downloadedBytes?: IntFieldUpdateOperationsInput | number
+    downloadedBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     lastUsedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -26346,12 +26352,12 @@ export namespace Prisma {
   export type WhisperModelCreateManyInput = {
     id: string
     name: string
-    sizeBytes: number
+    sizeBytes: bigint | number
     downloadUrl: string
     sha256: string
     localPath?: string | null
     state?: string
-    downloadedBytes?: number
+    downloadedBytes?: bigint | number
     downloadedAt?: Date | string | null
     lastUsedAt?: Date | string | null
     createdAt?: Date | string
@@ -26361,12 +26367,12 @@ export namespace Prisma {
   export type WhisperModelUpdateManyMutationInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
-    sizeBytes?: IntFieldUpdateOperationsInput | number
+    sizeBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadUrl?: StringFieldUpdateOperationsInput | string
     sha256?: StringFieldUpdateOperationsInput | string
     localPath?: NullableStringFieldUpdateOperationsInput | string | null
     state?: StringFieldUpdateOperationsInput | string
-    downloadedBytes?: IntFieldUpdateOperationsInput | number
+    downloadedBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     lastUsedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -26376,12 +26382,12 @@ export namespace Prisma {
   export type WhisperModelUncheckedUpdateManyInput = {
     id?: StringFieldUpdateOperationsInput | string
     name?: StringFieldUpdateOperationsInput | string
-    sizeBytes?: IntFieldUpdateOperationsInput | number
+    sizeBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadUrl?: StringFieldUpdateOperationsInput | string
     sha256?: StringFieldUpdateOperationsInput | string
     localPath?: NullableStringFieldUpdateOperationsInput | string | null
     state?: StringFieldUpdateOperationsInput | string
-    downloadedBytes?: IntFieldUpdateOperationsInput | number
+    downloadedBytes?: BigIntFieldUpdateOperationsInput | bigint | number
     downloadedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     lastUsedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -26973,6 +26979,17 @@ export namespace Prisma {
     not?: NestedIntFilter<$PrismaModel> | number
   }
 
+  export type BigIntFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntFilter<$PrismaModel> | bigint | number
+  }
+
   export type BoolFilter<$PrismaModel = never> = {
     equals?: boolean | BooleanFieldRefInput<$PrismaModel>
     not?: NestedBoolFilter<$PrismaModel> | boolean
@@ -27117,6 +27134,22 @@ export namespace Prisma {
     _sum?: NestedIntFilter<$PrismaModel>
     _min?: NestedIntFilter<$PrismaModel>
     _max?: NestedIntFilter<$PrismaModel>
+  }
+
+  export type BigIntWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntWithAggregatesFilter<$PrismaModel> | bigint | number
+    _count?: NestedIntFilter<$PrismaModel>
+    _avg?: NestedFloatFilter<$PrismaModel>
+    _sum?: NestedBigIntFilter<$PrismaModel>
+    _min?: NestedBigIntFilter<$PrismaModel>
+    _max?: NestedBigIntFilter<$PrismaModel>
   }
 
   export type BoolWithAggregatesFilter<$PrismaModel = never> = {
@@ -28309,6 +28342,14 @@ export namespace Prisma {
     divide?: number
   }
 
+  export type BigIntFieldUpdateOperationsInput = {
+    set?: bigint | number
+    increment?: bigint | number
+    decrement?: bigint | number
+    multiply?: bigint | number
+    divide?: bigint | number
+  }
+
   export type BoolFieldUpdateOperationsInput = {
     set?: boolean
   }
@@ -28978,6 +29019,17 @@ export namespace Prisma {
     not?: NestedIntFilter<$PrismaModel> | number
   }
 
+  export type NestedBigIntFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntFilter<$PrismaModel> | bigint | number
+  }
+
   export type NestedBoolFilter<$PrismaModel = never> = {
     equals?: boolean | BooleanFieldRefInput<$PrismaModel>
     not?: NestedBoolFilter<$PrismaModel> | boolean
@@ -29039,6 +29091,22 @@ export namespace Prisma {
     _sum?: NestedIntFilter<$PrismaModel>
     _min?: NestedIntFilter<$PrismaModel>
     _max?: NestedIntFilter<$PrismaModel>
+  }
+
+  export type NestedBigIntWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntWithAggregatesFilter<$PrismaModel> | bigint | number
+    _count?: NestedIntFilter<$PrismaModel>
+    _avg?: NestedFloatFilter<$PrismaModel>
+    _sum?: NestedBigIntFilter<$PrismaModel>
+    _min?: NestedBigIntFilter<$PrismaModel>
+    _max?: NestedBigIntFilter<$PrismaModel>
   }
 
   export type NestedFloatFilter<$PrismaModel = never> = {
