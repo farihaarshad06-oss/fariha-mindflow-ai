@@ -23,6 +23,8 @@ export type DashboardView = 'loading' | 'empty' | 'error' | 'data';
 const mockRecentChats = [
   { id: 'chat-1', topic: 'Principles of Bioethics', preview: '"Explain autonomy in clinical decision-making…"', time: '2 hours ago' },
 ];
+
+const fadeUp = {
   hidden: { opacity: 0, y: 12 },
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.05, duration: 0.2 } }),
 };
@@ -142,7 +144,7 @@ export function DashboardPage({ view = 'data' }: { view?: DashboardView }) {
                   title={t('dashboard.noLectures')}
                   action={
                     <Link to="/recorder">
-                      <Button size="sm">{t('dashboard.quickRecord')}</Button>
+                      <Button>{t('dashboard.quickRecord')}</Button>
                     </Link>
                   }
                 />
@@ -319,4 +321,3 @@ export function DashboardPage({ view = 'data' }: { view?: DashboardView }) {
     </div>
   );
 }
-
