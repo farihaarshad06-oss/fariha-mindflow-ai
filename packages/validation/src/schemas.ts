@@ -40,7 +40,11 @@ export const createCourseSchema = z.object({
 export type CreateCourseInput = z.infer<typeof createCourseSchema>;
 
 export const createLectureSchema = z.object({
-  courseId: z.string().uuid().optional(),
+  // Empty string from the select "no course" option must be treated as absent.
+  courseId: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? undefined : v),
+    z.string().min(1).optional(),
+  ),
   title: z.string().min(2).max(200),
   consentAcknowledged: z.boolean(),
 });
