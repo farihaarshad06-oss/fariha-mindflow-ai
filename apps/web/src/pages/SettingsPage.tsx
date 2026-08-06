@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PageHeader, Card, CardBody, Button, Alert, Select, Input, Spinner } from '@mindflow/ui';
+import { Card, CardBody, Button, Alert, Select, Input, Spinner } from '@mindflow/ui';
 import { SUPPORTED_LOCALES, LOCALE_LABELS } from '@mindflow/config';
 import { useAuthStore } from '../store/auth';
-import { Shield, Key, Database, Brain } from 'lucide-react';
+import {
+  Shield, Key, Database, Brain, User, Globe, ChevronDown, ChevronUp,
+  CheckCircle2, AlertTriangle, Settings,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface DesktopSettings {
   preferredLanguage?: string;
@@ -114,21 +118,53 @@ export function SettingsPage() {
   if (loading) return <div className="flex justify-center py-20"><Spinner label={t('common.loading')} /></div>;
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <PageHeader title={t('settings.title')} />
+    <div className="mx-auto max-w-2xl space-y-6">
+      {/* Page header */}
+      <div>
+        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
+          <Settings className="h-5 w-5 text-brand-600" aria-hidden="true" />
+          {t('settings.title')}
+        </h1>
+        <p className="mt-0.5 text-sm text-slate-500">Manage your account, preferences, and AI configuration.</p>
+      </div>
+
+      {/* Saved toast */}
+      <AnimatePresence>
+        {saved && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700 border border-emerald-200"
+          >
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            Settings saved
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Account */}
-      <Card className="mb-4">
+      <Card>
         <CardBody>
-          <h2 className="font-semibold text-slate-900">{t('settings.account')}</h2>
-          <p className="mt-1 text-sm text-slate-500">{user?.email ?? (isDesktop ? 'Local user' : '—')}</p>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-600">
+              <User className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">{t('settings.account')}</p>
+              <p className="text-sm text-slate-500">{user?.email ?? (isDesktop ? 'Local user' : '—')}</p>
+            </div>
+          </div>
         </CardBody>
       </Card>
 
-      {/* Language */}
-      <Card className="mb-4">
+      {/* General: Language */}
+      <Card>
         <CardBody>
-          <h2 className="font-semibold text-slate-900">{t('settings.language')}</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <Globe className="h-4 w-4 text-brand-600" aria-hidden="true" />
+            <h2 className="font-semibold text-slate-900">{t('settings.language')}</h2>
+          </div>
           <Select
             aria-label={t('settings.language')}
             value={settings.preferredLanguage ?? i18n.language}
@@ -136,7 +172,7 @@ export function SettingsPage() {
               void i18n.changeLanguage(e.target.value);
               void save({ preferredLanguage: e.target.value });
             }}
-            className="mt-2 max-w-xs"
+            className="max-w-xs"
           >
             {SUPPORTED_LOCALES.map((locale) => (
               <option key={locale} value={locale}>{LOCALE_LABELS[locale]}</option>
@@ -146,50 +182,63 @@ export function SettingsPage() {
       </Card>
 
       {/* Privacy */}
-      <Card className="mb-4">
+      <Card>
         <CardBody>
-          <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+          <div className="mb-4 flex items-center gap-2">
             <Shield className="h-4 w-4 text-brand-600" aria-hidden="true" />
-            {t('settings.privacy')}
-          </h2>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={settings.recordingConsentGiven ?? false}
-              onChange={(e) => void save({ recordingConsentGiven: e.target.checked })}
-            />
-            {t('settings.recordingConsent')}
-          </label>
-          <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={settings.privacyModeDefault ?? false}
-              onChange={(e) => void save({ privacyModeDefault: e.target.checked })}
-            />
-            Privacy mode by default (skip auto-transcription)
-          </label>
-          <Input
-            label={t('settings.audioRetention')}
-            type="number"
-            min={1}
-            max={3650}
-            value={String(settings.audioRetentionDays ?? 90)}
-            onChange={(e) => void save({ audioRetentionDays: parseInt(e.target.value, 10) })}
-            className="mt-3 max-w-xs"
-          />
+            <h2 className="font-semibold text-slate-900">{t('settings.privacy')}</h2>
+          </div>
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-100 p-3 hover:bg-slate-50">
+              <div>
+                <p className="text-sm font-medium text-slate-700">{t('settings.recordingConsent')}</p>
+                <p className="text-xs text-slate-400">Allow the app to record and process audio.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.recordingConsentGiven ?? false}
+                onChange={(e) => void save({ recordingConsentGiven: e.target.checked })}
+                className="h-4 w-4 accent-brand-600"
+              />
+            </label>
+            <label className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-100 p-3 hover:bg-slate-50">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Privacy mode by default</p>
+                <p className="text-xs text-slate-400">Skip auto-transcription when starting a recording.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.privacyModeDefault ?? false}
+                onChange={(e) => void save({ privacyModeDefault: e.target.checked })}
+                className="h-4 w-4 accent-brand-600"
+              />
+            </label>
+            <div className="pt-1">
+              <Input
+                label={t('settings.audioRetention')}
+                type="number"
+                min={1}
+                max={3650}
+                value={String(settings.audioRetentionDays ?? 90)}
+                onChange={(e) => void save({ audioRetentionDays: parseInt(e.target.value, 10) })}
+                className="max-w-xs"
+              />
+              <p className="mt-1 text-xs text-slate-400">Days to keep recorded audio files on disk.</p>
+            </div>
+          </div>
         </CardBody>
       </Card>
 
       {/* AI Provider API Keys */}
       {isDesktop && (
-        <Card className="mb-4">
+        <Card>
           <CardBody>
-            <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+            <div className="mb-4 flex items-center gap-2">
               <Key className="h-4 w-4 text-brand-600" aria-hidden="true" />
-              AI Provider API Keys
-            </h2>
+              <h2 className="font-semibold text-slate-900">AI Provider</h2>
+            </div>
             <p className="mb-3 text-xs text-slate-500">
-              Keys are encrypted with OS credential store. Never stored in plain text or sent to logs.
+              Keys are encrypted with your OS credential store and never stored in plain text.
             </p>
             <div className="flex flex-col gap-3">
               <Select
@@ -215,77 +264,130 @@ export function SettingsPage() {
                     className="flex-1"
                   />
                   <Button onClick={() => void saveApiKey()} disabled={!apiKey.trim()} className="self-end">
-                    Save
+                    Save Key
                   </Button>
                 </div>
               )}
-              {keyStatus === 'saved' && <Alert tone="success">Key saved securely.</Alert>}
-              {keyStatus === 'error' && <Alert tone="danger">{keyErrorMessage ?? 'Failed to save key. OS encryption may be unavailable.'}</Alert>}
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* AI Usage Limits */}
-      {isDesktop && (
-        <Card className="mb-4">
-          <CardBody>
-            <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
-              <Brain className="h-4 w-4 text-brand-600" aria-hidden="true" />
-              AI Usage Limits
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Daily token limit"
-                type="number"
-                value={String(settings.dailyTokenLimit ?? 50000)}
-                onChange={(e) => void save({ dailyTokenLimit: parseInt(e.target.value, 10) })}
-              />
-              <Input
-                label="Monthly token limit"
-                type="number"
-                value={String(settings.monthlyTokenLimit ?? 500000)}
-                onChange={(e) => void save({ monthlyTokenLimit: parseInt(e.target.value, 10) })}
-              />
-              <Input
-                label="Daily cost limit (cents)"
-                type="number"
-                value={String(settings.dailyCostLimitCents ?? 500)}
-                onChange={(e) => void save({ dailyCostLimitCents: parseInt(e.target.value, 10) })}
-              />
-              <Input
-                label="Monthly cost limit (cents)"
-                type="number"
-                value={String(settings.monthlyCostLimitCents ?? 5000)}
-                onChange={(e) => void save({ monthlyCostLimitCents: parseInt(e.target.value, 10) })}
-              />
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Diagnostics */}
-      {isDesktop && diagnostics && (
-        <Card className="mb-4">
-          <CardBody>
-            <h2 className="mb-2 flex items-center gap-2 font-semibold text-slate-900">
-              <Database className="h-4 w-4 text-brand-600" aria-hidden="true" />
-              Diagnostics
-            </h2>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600">
-              {Object.entries(diagnostics).map(([k, v]) => (
-                <div key={k} className="contents">
-                  <dt className="font-medium">{k}</dt>
-                  <dd className="truncate text-slate-500">{String(v)}</dd>
+              {keyStatus === 'saved' && (
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" /> Key saved securely.
                 </div>
-              ))}
-            </dl>
+              )}
+              {keyStatus === 'error' && (
+                <Alert tone="danger">{keyErrorMessage ?? 'Failed to save key. OS encryption may be unavailable.'}</Alert>
+              )}
+            </div>
           </CardBody>
         </Card>
       )}
 
-      {saving && <p className="text-xs text-slate-400">Saving…</p>}
-      {saved && <Alert tone="success">Settings saved.</Alert>}
+      {/* Advanced (collapsed by default) */}
+      {isDesktop && (
+        <AdvancedSection settings={settings} save={save} diagnostics={diagnostics} />
+      )}
+
+      {saving && (
+        <p className="flex items-center gap-1.5 text-xs text-slate-400">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-brand-500" />
+          Saving…
+        </p>
+      )}
     </div>
+  );
+}
+
+// Advanced settings hidden from average users
+function AdvancedSection({
+  settings,
+  save,
+  diagnostics,
+}: {
+  settings: DesktopSettings;
+  save: (updates: Partial<DesktopSettings>) => Promise<void>;
+  diagnostics: Record<string, unknown> | null;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Card>
+      <CardBody>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-slate-400" aria-hidden="true" />
+            <span className="font-semibold text-slate-700">Advanced</span>
+          </div>
+          {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        </button>
+
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-4 space-y-4">
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                    <p className="text-sm font-medium text-slate-700">AI Usage Limits</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="Daily token limit"
+                      type="number"
+                      value={String(settings.dailyTokenLimit ?? 50000)}
+                      onChange={(e) => void save({ dailyTokenLimit: parseInt(e.target.value, 10) })}
+                    />
+                    <Input
+                      label="Monthly token limit"
+                      type="number"
+                      value={String(settings.monthlyTokenLimit ?? 500000)}
+                      onChange={(e) => void save({ monthlyTokenLimit: parseInt(e.target.value, 10) })}
+                    />
+                    <Input
+                      label="Daily cost limit (¢)"
+                      type="number"
+                      value={String(settings.dailyCostLimitCents ?? 500)}
+                      onChange={(e) => void save({ dailyCostLimitCents: parseInt(e.target.value, 10) })}
+                    />
+                    <Input
+                      label="Monthly cost limit (¢)"
+                      type="number"
+                      value={String(settings.monthlyCostLimitCents ?? 5000)}
+                      onChange={(e) => void save({ monthlyCostLimitCents: parseInt(e.target.value, 10) })}
+                    />
+                  </div>
+                </div>
+
+                {diagnostics && (
+                  <div>
+                    <div className="mb-2 flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 text-slate-400" />
+                      <p className="text-sm font-medium text-slate-700">Diagnostics</p>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                      {Object.entries(diagnostics).map(([k, v]) => (
+                        <div key={k} className="contents">
+                          <dt className="font-medium">{k}</dt>
+                          <dd className="truncate text-slate-500">{String(v)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </CardBody>
+    </Card>
   );
 }
