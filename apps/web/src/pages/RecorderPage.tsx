@@ -126,8 +126,9 @@ export function RecorderPage() {
 
   useEffect(() => {
     if (!isDesktop || !window.electronAPI) return;
+    const api = window.electronAPI;
     void (async () => {
-      const res = await window.electronAPI.getSettings();
+      const res = await api.getSettings();
       if (!res.ok || !res.data) return;
       const desktopSettings = res.data as {
         preferredLanguage?: string;
