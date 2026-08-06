@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader, Card, CardBody, Button, Alert, Select, Input, Spinner } from '@mindflow/ui';
 import { SUPPORTED_LOCALES, LOCALE_LABELS } from '@mindflow/config';
@@ -36,8 +36,10 @@ export function SettingsPage() {
 
   const isDesktop = typeof window !== 'undefined' && !!window.electronAPI;
 
-  // Refresh the "key already set" indicators for all known providers.
-  const refreshSavedKeys = async () => {
+  // Standalone helper — queries hasSecret for every stored provider and
+  // updates the savedProviderKeys map.  Defined outside useEffect so it can
+  // also be called after a successful save.
+  const refreshSavedKeys = useCallback(async () => {
     if (!isDesktop || !window.electronAPI) return;
     const providersRes = await window.electronAPI.listProviders();
     if (!providersRes.ok || !Array.isArray(providersRes.data)) return;
@@ -50,7 +52,7 @@ export function SettingsPage() {
       }),
     );
     setSavedProviderKeys(map);
-  };
+  }, [isDesktop]);
 
   useEffect(() => {
     const load = async () => {
@@ -65,8 +67,7 @@ export function SettingsPage() {
       setLoading(false);
     };
     void load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDesktop]);
+  }, [isDesktop, refreshSavedKeys]);
 
   const save = async (updates: Partial<DesktopSettings>) => {
     setSaving(true);
