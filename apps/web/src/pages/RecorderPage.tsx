@@ -46,6 +46,11 @@ interface MicDevice {
   label: string;
 }
 
+function normalizeLanguageCode(language?: string): string {
+  const code = language?.trim().slice(0, 2).toLowerCase();
+  return code && /^[a-z]{2}$/.test(code) ? code : 'en';
+}
+
 const CHUNK_INTERVAL_MS = 5 * 1000; // 5 seconds — matches main-process CHUNK_DURATION_MS
 
 const formatTime = (seconds: number) => {
@@ -58,7 +63,7 @@ const formatTime = (seconds: number) => {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function RecorderPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const location = useLocation();
   const selectedLecture = useLectureStore((s) => s.selectedLecture);
 
@@ -84,6 +89,7 @@ export function RecorderPage() {
   const [importantTimes, setImportantTimes] = useState<number[]>([]);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [liveTranscriptActive, setLiveTranscriptActive] = useState(false);
+  const [preferredLanguage, setPreferredLanguage] = useState(() => normalizeLanguageCode(i18n.resolvedLanguage ?? i18n.language));
 
   const liveTranscriptRef = useRef<HTMLDivElement | null>(null);
 
@@ -108,6 +114,8 @@ export function RecorderPage() {
     'MediaRecorder' in window &&
     !!navigator.mediaDevices?.getUserMedia;
 
+  const recordingLanguage = normalizeLanguageCode(preferredLanguage);
+
   // ── Enumerate microphones ────────────────────────────────────────────
   useEffect(() => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -121,6 +129,22 @@ export function RecorderPage() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!isDesktop || !window.electronAPI) return;
+    void (async () => {
+      const res = await window.electronAPI.getSettings();
+      if (!res.ok || !res.data) return;
+      const desktopSettings = res.data as {
+        preferredLanguage?: string;
+        recordingConsentGiven?: boolean;
+        privacyModeDefault?: boolean;
+      };
+      setPreferredLanguage(normalizeLanguageCode(desktopSettings.preferredLanguage));
+      setConsent(Boolean(desktopSettings.recordingConsentGiven));
+      setPrivacyMode(Boolean(desktopSettings.privacyModeDefault));
+    })();
+  }, [isDesktop]);
 
   // ── Disk space monitor ───────────────────────────────────────────────
   useEffect(() => {
@@ -166,6 +190,7 @@ export function RecorderPage() {
   useEffect(() => {
     if (!isDesktop || !window.electronAPI) return;
     const unsub = window.electronAPI.onLiveTranscript((data) => {
+      if (data.lectureId !== lectureId) return;
       if (data.partial) {
         // Append text from newly transcribed segments
         const newText = data.segments.map((s) => s.text).join(' ').trim();
@@ -293,7 +318,7 @@ export function RecorderPage() {
           lectureId,
           microphoneId: selectedMic,
           privacyMode,
-          language: 'en',
+          language: recordingLanguage,
         });
         if (res.ok && res.data) {
           newSessionId = (res.data as { id: string }).id;
@@ -356,7 +381,7 @@ export function RecorderPage() {
       setError(isPermission ? 'permissionDenied' : 'interrupted');
       setStatus('error');
     }
-  }, [supported, selectedMic, privacyMode, isDesktop, lectureId, flushChunk]);
+  }, [supported, selectedMic, privacyMode, isDesktop, lectureId, flushChunk, recordingLanguage]);
 
   // ── Pause ────────────────────────────────────────────────────────────
   const pauseRecording = useCallback(async () => {

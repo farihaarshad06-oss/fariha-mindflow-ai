@@ -10,8 +10,13 @@ import { mockCourses } from '../lib/mock-data';
 import { apiClient } from '../lib/api';
 import { useLectureStore } from '../store/lecture';
 
+function normalizeLanguageCode(language?: string): string {
+  const code = language?.trim().slice(0, 2).toLowerCase();
+  return code && /^[a-z]{2}$/.test(code) ? code : 'en';
+}
+
 export function NewLecturePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const selectLecture = useLectureStore((s) => s.selectLecture);
@@ -34,10 +39,15 @@ export function NewLecturePage() {
     // we get a real CUID to pass to the RecorderPage. Without a valid lecture ID
     // the recording IPC handlers reject every call (Zod .cuid() validation).
     if (isDesktop && window.electronAPI) {
+      const settingsRes = await window.electronAPI.getSettings();
+      const preferredLanguage =
+        settingsRes.ok && settingsRes.data
+          ? normalizeLanguageCode((settingsRes.data as { preferredLanguage?: string }).preferredLanguage)
+          : normalizeLanguageCode(i18n.resolvedLanguage ?? i18n.language);
       const res = await window.electronAPI.createLecture({
         title: data.title,
         courseId: data.courseId || undefined,
-        language: 'en',
+        language: preferredLanguage,
       });
       if (!res.ok) {
         setSubmitError(res.error ?? 'Failed to create lecture. Please try again.');
