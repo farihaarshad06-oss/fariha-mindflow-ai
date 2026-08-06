@@ -8,12 +8,8 @@ import { Card, Input, Button, Select, Alert } from '@mindflow/ui';
 import { createLectureSchema, type CreateLectureInput } from '@mindflow/validation';
 import { mockCourses } from '../lib/mock-data';
 import { apiClient } from '../lib/api';
+import { normalizeLanguageCode } from '../lib/language';
 import { useLectureStore } from '../store/lecture';
-
-function normalizeLanguageCode(language?: string): string {
-  const code = language?.trim().slice(0, 2).toLowerCase();
-  return code && /^[a-z]{2}$/.test(code) ? code : 'en';
-}
 
 export function NewLecturePage() {
   const { t, i18n } = useTranslation();

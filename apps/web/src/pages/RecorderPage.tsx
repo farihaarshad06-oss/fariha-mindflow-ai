@@ -16,6 +16,7 @@ import {
   Select,
 } from '@mindflow/ui';
 import { FILE_LIMITS } from '@mindflow/config';
+import { normalizeLanguageCode } from '../lib/language';
 import { useLectureStore } from '../store/lecture';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -44,11 +45,6 @@ type RecorderError =
 interface MicDevice {
   deviceId: string;
   label: string;
-}
-
-function normalizeLanguageCode(language?: string): string {
-  const code = language?.trim().slice(0, 2).toLowerCase();
-  return code && /^[a-z]{2}$/.test(code) ? code : 'en';
 }
 
 const CHUNK_INTERVAL_MS = 5 * 1000; // 5 seconds — matches main-process CHUNK_DURATION_MS
@@ -114,7 +110,7 @@ export function RecorderPage() {
     'MediaRecorder' in window &&
     !!navigator.mediaDevices?.getUserMedia;
 
-  const recordingLanguage = normalizeLanguageCode(preferredLanguage);
+  const recordingLanguage = preferredLanguage;
 
   // ── Enumerate microphones ────────────────────────────────────────────
   useEffect(() => {
