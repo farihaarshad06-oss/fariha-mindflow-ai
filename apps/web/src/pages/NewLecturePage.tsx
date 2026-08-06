@@ -8,10 +8,11 @@ import { Card, Input, Button, Select, Alert } from '@mindflow/ui';
 import { createLectureSchema, type CreateLectureInput } from '@mindflow/validation';
 import { mockCourses } from '../lib/mock-data';
 import { apiClient } from '../lib/api';
+import { normalizeLanguageCode } from '../lib/language';
 import { useLectureStore } from '../store/lecture';
 
 export function NewLecturePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const selectLecture = useLectureStore((s) => s.selectLecture);
@@ -34,10 +35,15 @@ export function NewLecturePage() {
     // we get a real CUID to pass to the RecorderPage. Without a valid lecture ID
     // the recording IPC handlers reject every call (Zod .cuid() validation).
     if (isDesktop && window.electronAPI) {
+      const settingsRes = await window.electronAPI.getSettings();
+      const preferredLanguage =
+        settingsRes.ok && settingsRes.data
+          ? normalizeLanguageCode((settingsRes.data as { preferredLanguage?: string }).preferredLanguage)
+          : normalizeLanguageCode(i18n.resolvedLanguage ?? i18n.language);
       const res = await window.electronAPI.createLecture({
         title: data.title,
         courseId: data.courseId || undefined,
-        language: 'en',
+        language: preferredLanguage,
       });
       if (!res.ok) {
         setSubmitError(res.error ?? 'Failed to create lecture. Please try again.');

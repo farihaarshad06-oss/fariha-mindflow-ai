@@ -274,7 +274,15 @@ export function registerAllHandlers(): void {
       // Look up the session to determine privacy mode and language so we can
       // enqueue a live transcription job immediately after saving the chunk.
       const db = getPrisma();
-      const session = await db.recordingSession.findUnique({ where: { id: data.sessionId } });
+      const session = await db.recordingSession.findUnique({
+        where: { id: data.sessionId },
+        include: {
+          lecture: {
+            select: { language: true },
+          },
+        },
+      });
+      const fallbackSettings = await SettingsService.get();
 
       const chunk = await RecordingService.saveChunkAndEnqueueLive({
         sessionId: data.sessionId,
@@ -284,7 +292,7 @@ export function registerAllHandlers(): void {
         durationMs: data.durationMs,
         startOffsetMs: data.startOffsetMs,
         privacyMode: session?.privacyMode ?? false,
-        language: 'en',
+        language: session?.lecture?.language ?? fallbackSettings.preferredLanguage ?? 'en',
       });
       const result = ok(chunk);
       logIpcInvocation(IPC.RECORDING_CHUNK_SAVE, 'done', { ok: result.ok, chunkId: chunk.id, lectureId: chunk.lectureId });

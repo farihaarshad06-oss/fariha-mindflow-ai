@@ -16,6 +16,7 @@ import {
   Select,
 } from '@mindflow/ui';
 import { FILE_LIMITS } from '@mindflow/config';
+import { normalizeLanguageCode } from '../lib/language';
 import { useLectureStore } from '../store/lecture';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ const formatTime = (seconds: number) => {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function RecorderPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const location = useLocation();
   const selectedLecture = useLectureStore((s) => s.selectedLecture);
 
@@ -84,6 +85,7 @@ export function RecorderPage() {
   const [importantTimes, setImportantTimes] = useState<number[]>([]);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [liveTranscriptActive, setLiveTranscriptActive] = useState(false);
+  const [preferredLanguage, setPreferredLanguage] = useState(() => normalizeLanguageCode(i18n.resolvedLanguage ?? i18n.language));
 
   const liveTranscriptRef = useRef<HTMLDivElement | null>(null);
 
@@ -122,6 +124,22 @@ export function RecorderPage() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!isDesktop || !window.electronAPI) return;
+    void (async () => {
+      const res = await window.electronAPI.getSettings();
+      if (!res.ok || !res.data) return;
+      const desktopSettings = res.data as {
+        preferredLanguage?: string;
+        recordingConsentGiven?: boolean;
+        privacyModeDefault?: boolean;
+      };
+      setPreferredLanguage(normalizeLanguageCode(desktopSettings.preferredLanguage));
+      setConsent(Boolean(desktopSettings.recordingConsentGiven));
+      setPrivacyMode(Boolean(desktopSettings.privacyModeDefault));
+    })();
+  }, [isDesktop, lectureId]);
+
   // ── Disk space monitor ───────────────────────────────────────────────
   useEffect(() => {
     const checkDisk = async () => {
@@ -136,7 +154,7 @@ export function RecorderPage() {
     void checkDisk();
     const id = setInterval(() => void checkDisk(), 30_000);
     return () => clearInterval(id);
-  }, [isDesktop]);
+  }, [isDesktop, lectureId]);
 
   // ── Cleanup on unmount ───────────────────────────────────────────────
   useEffect(() => {
@@ -166,6 +184,7 @@ export function RecorderPage() {
   useEffect(() => {
     if (!isDesktop || !window.electronAPI) return;
     const unsub = window.electronAPI.onLiveTranscript((data) => {
+      if (data.lectureId !== lectureId) return;
       if (data.partial) {
         // Append text from newly transcribed segments
         const newText = data.segments.map((s) => s.text).join(' ').trim();
@@ -178,7 +197,7 @@ export function RecorderPage() {
       }
     });
     return unsub;
-  }, [isDesktop]);
+  }, [isDesktop, lectureId]);
 
   // ── Auto-scroll live transcript to bottom ────────────────────────────
   useEffect(() => {
@@ -293,7 +312,7 @@ export function RecorderPage() {
           lectureId,
           microphoneId: selectedMic,
           privacyMode,
-          language: 'en',
+          language: preferredLanguage,
         });
         if (res.ok && res.data) {
           newSessionId = (res.data as { id: string }).id;
@@ -356,7 +375,7 @@ export function RecorderPage() {
       setError(isPermission ? 'permissionDenied' : 'interrupted');
       setStatus('error');
     }
-  }, [supported, selectedMic, privacyMode, isDesktop, lectureId, flushChunk]);
+  }, [supported, selectedMic, privacyMode, isDesktop, lectureId, flushChunk, preferredLanguage]);
 
   // ── Pause ────────────────────────────────────────────────────────────
   const pauseRecording = useCallback(async () => {

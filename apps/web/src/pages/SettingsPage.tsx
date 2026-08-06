@@ -24,6 +24,25 @@ interface DesktopSettings {
   whisperModelId?: string;
 }
 
+interface DesktopProvider {
+  id: string;
+  providerType: string;
+  displayName: string;
+  enabled: boolean;
+  isDefault: boolean;
+  baseUrl?: string | null;
+  modelRouting?: string | null;
+}
+
+function parseModelRouting(value: string | null | undefined) {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as { economy?: string; balanced?: string; quality?: string };
+  } catch {
+    return undefined;
+  }
+}
+
 export function SettingsPage() {
   const { t, i18n } = useTranslation();
   const user = useAuthStore((s) => s.user);
@@ -70,7 +89,7 @@ export function SettingsPage() {
     setKeyErrorMessage(null);
 
     const providersRes = await window.electronAPI.listProviders();
-    const providers = providersRes.ok && Array.isArray(providersRes.data) ? providersRes.data as Array<{ id: string; providerType: string }> : [];
+    const providers = providersRes.ok && Array.isArray(providersRes.data) ? providersRes.data as DesktopProvider[] : [];
     let matchingProvider = providers.find((provider) => provider.providerType === apiKeyProvider);
 
     // Auto-create the provider record if it doesn't exist yet so the user
@@ -96,17 +115,53 @@ export function SettingsPage() {
         return;
       }
       const created = upsertRes.data as { id: string };
-      matchingProvider = { id: created.id, providerType: apiKeyProvider };
+      matchingProvider = {
+        id: created.id,
+        providerType: apiKeyProvider,
+        displayName: displayNames[apiKeyProvider] ?? apiKeyProvider,
+        enabled: true,
+        isDefault: providers.length === 0,
+      };
+    } else if (!matchingProvider.enabled) {
+      const upsertRes = await window.electronAPI.upsertProvider({
+        id: matchingProvider.id,
+        providerType: matchingProvider.providerType,
+        displayName: matchingProvider.displayName,
+        enabled: true,
+        isDefault: matchingProvider.isDefault,
+        baseUrl: matchingProvider.baseUrl ?? '',
+        modelRouting: parseModelRouting(matchingProvider.modelRouting),
+      });
+      if (!upsertRes.ok) {
+        setKeyStatus('error');
+        setKeyErrorMessage(`Failed to enable provider: ${upsertRes.error ?? 'Unknown error'}`);
+        setTimeout(() => { setKeyStatus('idle'); setKeyErrorMessage(null); }, 5000);
+        return;
+      }
+      matchingProvider = { ...matchingProvider, enabled: true };
     }
 
-    await window.electronAPI.updateSettings({
+    const settingsRes = await window.electronAPI.updateSettings({
       defaultAiProvider: matchingProvider.id,
     });
+    if (!settingsRes.ok) {
+      setKeyStatus('error');
+      setKeyErrorMessage(`Failed to update AI settings: ${settingsRes.error ?? 'Unknown error'}`);
+      setTimeout(() => { setKeyStatus('idle'); setKeyErrorMessage(null); }, 5000);
+      return;
+    }
 
     const res = await window.electronAPI.setSecret(`provider.${matchingProvider.id}`, apiKey);
     if (res.ok) {
-      setKeyStatus('saved');
-      setApiKey('');
+      const verifyRes = await window.electronAPI.hasSecret(`provider.${matchingProvider.id}`);
+      if (verifyRes.ok && verifyRes.data === true) {
+        setKeyStatus('saved');
+        setApiKey('');
+      } else {
+        setKeyStatus('error');
+        setKeyErrorMessage('Key was not persisted. Please try again.');
+        setTimeout(() => { setKeyStatus('idle'); setKeyErrorMessage(null); }, 5000);
+      }
     } else {
       setKeyStatus('error');
       setKeyErrorMessage(`Failed to save key: ${res.error ?? 'OS encryption may be unavailable.'}`);
