@@ -20,7 +20,9 @@ import { mockCourses, mockLectures } from '../lib/mock-data';
 
 export type DashboardView = 'loading' | 'empty' | 'error' | 'data';
 
-const fadeUp = {
+const mockRecentChats = [
+  { id: 'chat-1', topic: 'Principles of Bioethics', preview: '"Explain autonomy in clinical decision-making…"', time: '2 hours ago' },
+];
   hidden: { opacity: 0, y: 12 },
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.05, duration: 0.2 } }),
 };
@@ -43,6 +45,7 @@ export function DashboardPage({ view = 'data' }: { view?: DashboardView }) {
 
   const lectures = view === 'empty' ? [] : mockLectures;
   const courses = view === 'empty' ? [] : mockCourses;
+  const recentChats = view === 'empty' ? [] : mockRecentChats;
   const weakTopics = courses.flatMap((course) => course.weakTopics);
 
   const now = new Date();
@@ -285,7 +288,7 @@ export function DashboardPage({ view = 'data' }: { view?: DashboardView }) {
               <MessageSquare className="h-4 w-4 text-brand-600" aria-hidden="true" />
               <h2 className="text-sm font-semibold text-slate-800">Recent AI Chats</h2>
             </div>
-            {lectures.length === 0 ? (
+            {recentChats.length === 0 ? (
               <EmptyState
                 title="No chats yet"
                 action={
@@ -296,15 +299,15 @@ export function DashboardPage({ view = 'data' }: { view?: DashboardView }) {
               />
             ) : (
               <div className="space-y-2">
-                <div className="rounded-lg bg-brand-50 p-3">
-                  <p className="text-xs font-medium text-brand-700">Principles of Bioethics</p>
-                  <p className="mt-0.5 text-xs text-slate-600 line-clamp-2">
-                    "Explain autonomy in clinical decision-making…"
-                  </p>
-                  <div className="mt-2 flex items-center gap-1 text-xs text-slate-400">
-                    <Clock className="h-3 w-3" /> 2 hours ago
+                {recentChats.map((chat) => (
+                  <div key={chat.id} className="rounded-lg bg-brand-50 p-3">
+                    <p className="text-xs font-medium text-brand-700">{chat.topic}</p>
+                    <p className="mt-0.5 text-xs text-slate-600 line-clamp-2">{chat.preview}</p>
+                    <div className="mt-2 flex items-center gap-1 text-xs text-slate-400">
+                      <Clock className="h-3 w-3" /> {chat.time}
+                    </div>
                   </div>
-                </div>
+                ))}
                 <Button variant="ghost" fullWidth onClick={() => navigate('/chat')}>
                   Open Chat <ArrowRight className="h-3.5 w-3.5" />
                 </Button>

@@ -60,20 +60,25 @@ function TypingIndicator() {
 function MessageBubble({ message, onCopy }: { message: Message; onCopy: (text: string) => void }) {
   const isUser = message.role === 'user';
 
-  // Very basic markdown-to-HTML: bold, lists, newlines
-  const formatContent = (text: string) => {
-    return text
-      .split('\n')
-      .map((line, i) => {
-        // Bold
-        line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        // List item
-        if (line.startsWith('- ')) {
-          return `<li key="${i}" class="ml-4 list-disc">${line.slice(2)}</li>`;
-        }
-        return line || '<br />';
-      })
-      .join('\n');
+  // Safely render basic markdown: bold, bullet lists, line breaks
+  const renderContent = (text: string) => {
+    return text.split('\n').map((line, i) => {
+      if (line.startsWith('- ')) {
+        const parts = line.slice(2).split(/\*\*(.*?)\*\*/g);
+        return (
+          <li key={i} className="ml-4 list-disc">
+            {parts.map((part, j) => j % 2 === 1 ? <strong key={j}>{part}</strong> : part)}
+          </li>
+        );
+      }
+      if (!line) return <br key={i} />;
+      const parts = line.split(/\*\*(.*?)\*\*/g);
+      return (
+        <p key={i}>
+          {parts.map((part, j) => j % 2 === 1 ? <strong key={j}>{part}</strong> : part)}
+        </p>
+      );
+    });
   };
 
   const timeStr = message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -105,10 +110,9 @@ function MessageBubble({ message, onCopy }: { message: Message; onCopy: (text: s
           {isUser ? (
             <p>{message.content}</p>
           ) : (
-            <div
-              className="prose prose-sm max-w-none prose-strong:font-semibold prose-li:my-0"
-              dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
-            />
+            <div className="prose prose-sm max-w-none prose-strong:font-semibold prose-li:my-0">
+              {renderContent(message.content)}
+            </div>
           )}
 
           {message.citations && message.citations.length > 0 && (

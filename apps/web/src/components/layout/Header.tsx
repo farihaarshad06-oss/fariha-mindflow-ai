@@ -18,7 +18,7 @@ export function Header() {
       <div className="flex items-center gap-3">
         <Link to="/dashboard" className="flex items-center gap-2 font-semibold text-slate-900">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-            <BrainCircuit className="h-4.5 w-4.5" aria-hidden="true" />
+            <BrainCircuit className="h-4 w-4" aria-hidden="true" />
           </span>
           <span className="hidden text-sm font-bold sm:block">{t('appName')}</span>
         </Link>
