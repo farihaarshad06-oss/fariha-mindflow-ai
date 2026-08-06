@@ -144,7 +144,7 @@ export function RecorderPage() {
       setConsent(Boolean(desktopSettings.recordingConsentGiven));
       setPrivacyMode(Boolean(desktopSettings.privacyModeDefault));
     })();
-  }, [isDesktop]);
+  }, [isDesktop, lectureId]);
 
   // ── Disk space monitor ───────────────────────────────────────────────
   useEffect(() => {
@@ -160,7 +160,7 @@ export function RecorderPage() {
     void checkDisk();
     const id = setInterval(() => void checkDisk(), 30_000);
     return () => clearInterval(id);
-  }, [isDesktop]);
+  }, [isDesktop, lectureId]);
 
   // ── Cleanup on unmount ───────────────────────────────────────────────
   useEffect(() => {
