@@ -24,15 +24,20 @@ function getVaultPath(): string {
 
 function loadVault(): Vault {
   try {
-    const raw = fs.readFileSync(getVaultPath(), 'utf8');
+    const vaultPath = getVaultPath();
+    log.info('[fs] readSecretVault', { vaultPath });
+    const raw = fs.readFileSync(vaultPath, 'utf8');
     return JSON.parse(raw) as Vault;
-  } catch {
+  } catch (error) {
+    log.warn('[secrets] loadVault failed', error instanceof Error ? error.message : String(error));
     return {};
   }
 }
 
 function saveVault(vault: Vault): void {
-  fs.writeFileSync(getVaultPath(), JSON.stringify(vault), { encoding: 'utf8', mode: 0o600 });
+  const vaultPath = getVaultPath();
+  fs.writeFileSync(vaultPath, JSON.stringify(vault), { encoding: 'utf8', mode: 0o600 });
+  log.info('[fs] writeSecretVault', { vaultPath, keyCount: Object.keys(vault).length });
 }
 
 function isAvailable(): boolean {
@@ -55,6 +60,7 @@ export const SecretsService = {
    */
   setSecret(key: string, value: string): void {
     validateKey(key);
+    log.info('[secrets] setSecret:start', { key });
     if (!isAvailable()) {
       throw new Error('OS encryption unavailable — cannot store secret');
     }
@@ -71,6 +77,7 @@ export const SecretsService = {
    */
   getSecret(key: string): string | null {
     validateKey(key);
+    log.info('[secrets] getSecret:start', { key });
     if (!isAvailable()) {
       log.warn('[secrets] OS encryption unavailable, cannot read secret');
       return null;
@@ -79,6 +86,7 @@ export const SecretsService = {
     const hex = vault[key];
     if (!hex) return null;
     try {
+      log.info('[secrets] getSecret:success', { key });
       return safeStorage.decryptString(Buffer.from(hex, 'hex'));
     } catch (err) {
       log.error('[secrets] Decryption failed for key:', key, err instanceof Error ? err.message : '');

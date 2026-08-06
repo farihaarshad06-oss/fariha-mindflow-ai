@@ -45,6 +45,8 @@ const queryClient = new QueryClient({
   },
 });
 
+export { queryClient };
+
 console.log('[main] Mounting React application');
 const rootElement = document.getElementById('root');
 if (!rootElement) {

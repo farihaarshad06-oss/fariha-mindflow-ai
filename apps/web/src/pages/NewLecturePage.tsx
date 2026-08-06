@@ -3,14 +3,18 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, Input, Button, Select, Alert } from '@mindflow/ui';
 import { createLectureSchema, type CreateLectureInput } from '@mindflow/validation';
 import { mockCourses } from '../lib/mock-data';
 import { apiClient } from '../lib/api';
+import { useLectureStore } from '../store/lecture';
 
 export function NewLecturePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const selectLecture = useLectureStore((s) => s.selectLecture);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
@@ -40,7 +44,9 @@ export function NewLecturePage() {
         return;
       }
       const lecture = res.data as { id: string; title: string };
-      navigate('/recorder', { state: { lectureId: lecture.id, lectureTitle: lecture.title } });
+      selectLecture({ id: lecture.id, title: lecture.title });
+      await queryClient.invalidateQueries({ queryKey: ['lectures'] });
+      navigate(`/lectures/${lecture.id}`, { replace: true });
       return;
     }
 

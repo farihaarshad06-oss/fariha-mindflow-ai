@@ -95,6 +95,10 @@ export function SettingsPage() {
       matchingProvider = { id: created.id, providerType: apiKeyProvider };
     }
 
+    await window.electronAPI.updateSettings({
+      defaultAiProvider: matchingProvider.id,
+    });
+
     const res = await window.electronAPI.setSecret(`provider.${matchingProvider.id}`, apiKey);
     if (res.ok) {
       setKeyStatus('saved');

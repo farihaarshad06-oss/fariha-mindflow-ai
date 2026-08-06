@@ -51,10 +51,12 @@ export const CourseService = {
 
 export const LectureService = {
   async list(courseId?: string): Promise<Lecture[]> {
-    return getPrisma().lecture.findMany({
+    const lectures = await getPrisma().lecture.findMany({
       where: courseId ? { courseId } : undefined,
       orderBy: { createdAt: 'desc' },
     });
+    log.info('[lectures] list', { courseId, count: lectures.length });
+    return lectures;
   },
 
   async get(id: string): Promise<Lecture | null> {
@@ -62,6 +64,7 @@ export const LectureService = {
   },
 
   async create(data: { courseId?: string; title: string; language?: string }): Promise<Lecture> {
+    log.info('[lectures] create:start', data);
     const lecture = await getPrisma().lecture.create({
       data: {
         courseId: data.courseId,

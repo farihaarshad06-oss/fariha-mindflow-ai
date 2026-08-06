@@ -529,21 +529,30 @@ export async function aiRequest<T extends ZodTypeAny>(
 export async function isAiConfigured(providerId?: string): Promise<boolean> {
   const db = getPrisma();
   let resolvedId = providerId;
+  log.info('[ai] isAiConfigured:start', { providerId });
 
   if (!resolvedId) {
     const settings = await SettingsService.get();
     resolvedId = settings.defaultAiProvider ?? undefined;
+    log.info('[ai] isAiConfigured:resolvedDefault', { resolvedId });
   }
 
   if (!resolvedId) {
     // Try to find any enabled provider with a stored key
     const providers = await db.aiProvider.findMany({ where: { enabled: true } });
-    return providers.some((p) => SecretsService.hasSecret(`provider.${p.id}`));
+    const configured = providers.some((p) => SecretsService.hasSecret(`provider.${p.id}`));
+    log.info('[ai] isAiConfigured:fallback', { providerCount: providers.length, configured });
+    return configured;
   }
 
   const provider = await db.aiProvider.findUnique({ where: { id: resolvedId } });
-  if (!provider || !provider.enabled) return false;
-  return SecretsService.hasSecret(`provider.${resolvedId}`);
+  if (!provider || !provider.enabled) {
+    log.warn('[ai] isAiConfigured:providerMissingOrDisabled', { resolvedId });
+    return false;
+  }
+  const configured = SecretsService.hasSecret(`provider.${resolvedId}`);
+  log.info('[ai] isAiConfigured:done', { resolvedId, configured });
+  return configured;
 }
 
 // ── Provider connection test ───────────────────────────────────────────────
@@ -554,6 +563,7 @@ export async function testProviderConnection(providerId: string): Promise<{ ok: 
   if (!provider) return { ok: false, error: 'Provider not found' };
 
   const apiKey = SecretsService.getSecret(`provider.${providerId}`) ?? '';
+  log.info('[ai] testProviderConnection:start', { providerId, providerType: provider.providerType, hasApiKey: Boolean(apiKey) });
   let routing: ProviderConfig['modelRouting'] = {};
   try { routing = JSON.parse(provider.modelRouting) as ProviderConfig['modelRouting']; } catch {
     // modelRouting may be empty string on a fresh provider row; default empty object is correct

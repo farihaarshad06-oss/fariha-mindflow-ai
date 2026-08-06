@@ -55,6 +55,10 @@ function wrap<T>(fn: () => Promise<IpcResult<T>>): Promise<IpcResult<T>> {
   });
 }
 
+function logIpcInvocation(channel: string, phase: 'start' | 'done' | 'error', details?: Record<string, unknown>): void {
+  log.info(`[ipc] ${phase}`, { channel, ...(details ?? {}) });
+}
+
 export function registerAllHandlers(): void {
   log.info('[ipc] registerAllHandlers:start');
   ipcMain.handle('diagnostics:startupEvent', (_e, raw: unknown) =>
@@ -116,14 +120,22 @@ export function registerAllHandlers(): void {
 
   // ── Settings ──────────────────────────────────────────────────────────
   ipcMain.handle(IPC.SETTINGS_GET, () =>
-    wrap(async () => ok(await SettingsService.get()))
+    wrap(async () => {
+      logIpcInvocation(IPC.SETTINGS_GET, 'start');
+      const result = ok(await SettingsService.get());
+      logIpcInvocation(IPC.SETTINGS_GET, 'done', { ok: result.ok });
+      return result;
+    })
   );
   log.info(`[ipc] registered ${IPC.SETTINGS_GET}`);
 
   ipcMain.handle(IPC.SETTINGS_SET, (_e, raw: unknown) =>
     wrap(async () => {
+      logIpcInvocation(IPC.SETTINGS_SET, 'start');
       const data = SettingsSetSchema.parse(raw);
-      return ok(await SettingsService.update(data));
+      const result = ok(await SettingsService.update(data));
+      logIpcInvocation(IPC.SETTINGS_SET, 'done', { ok: result.ok, keys: Object.keys(data) });
+      return result;
     })
   );
   log.info(`[ipc] registered ${IPC.SETTINGS_SET}`);
@@ -131,9 +143,12 @@ export function registerAllHandlers(): void {
   // ── Secrets ───────────────────────────────────────────────────────────
   ipcMain.handle(IPC.SECRET_SET, (_e, raw: unknown) =>
     wrap(async () => {
+      logIpcInvocation(IPC.SECRET_SET, 'start');
       const { key, value } = SecretSetSchema.parse(raw);
       SecretsService.setSecret(key, value);
-      return ok(undefined);
+      const result = ok(undefined);
+      logIpcInvocation(IPC.SECRET_SET, 'done', { ok: result.ok, key });
+      return result;
     })
   );
 
@@ -209,9 +224,12 @@ export function registerAllHandlers(): void {
   // ── Recording sessions ────────────────────────────────────────────────
   ipcMain.handle(IPC.RECORDING_START, (_e, raw: unknown) =>
     wrap(async () => {
+      logIpcInvocation(IPC.RECORDING_START, 'start');
       const data = RecordingStartSchema.parse(raw);
       const session = await RecordingService.startSession(data);
-      return ok(session);
+      const result = ok(session);
+      logIpcInvocation(IPC.RECORDING_START, 'done', { ok: result.ok, sessionId: session.id, lectureId: session.lectureId });
+      return result;
     })
   );
 
@@ -231,8 +249,12 @@ export function registerAllHandlers(): void {
 
   ipcMain.handle(IPC.RECORDING_STOP, (_e, sessionId: unknown) =>
     wrap(async () => {
+      logIpcInvocation(IPC.RECORDING_STOP, 'start');
       if (typeof sessionId !== 'string') return err('Invalid sessionId');
-      return ok(await RecordingService.stopSession(sessionId));
+      const session = await RecordingService.stopSession(sessionId);
+      const result = ok(session);
+      logIpcInvocation(IPC.RECORDING_STOP, 'done', { ok: result.ok, sessionId });
+      return result;
     })
   );
 
@@ -245,6 +267,7 @@ export function registerAllHandlers(): void {
 
   ipcMain.handle(IPC.RECORDING_CHUNK_SAVE, (_e, raw: unknown) =>
     wrap(async () => {
+      logIpcInvocation(IPC.RECORDING_CHUNK_SAVE, 'start');
       const data = RecordingChunkSaveSchema.parse(raw);
       const buf = Buffer.from(data.arrayBuffer instanceof ArrayBuffer ? data.arrayBuffer : (data.arrayBuffer as Uint8Array).buffer);
 
@@ -263,7 +286,9 @@ export function registerAllHandlers(): void {
         privacyMode: session?.privacyMode ?? false,
         language: 'en',
       });
-      return ok(chunk);
+      const result = ok(chunk);
+      logIpcInvocation(IPC.RECORDING_CHUNK_SAVE, 'done', { ok: result.ok, chunkId: chunk.id, lectureId: chunk.lectureId });
+      return result;
     })
   );
 
@@ -316,7 +341,12 @@ export function registerAllHandlers(): void {
 
   // ── Lectures ──────────────────────────────────────────────────────────
   ipcMain.handle(IPC.LECTURE_LIST, (_e, courseId: unknown) =>
-    wrap(async () => ok(await LectureService.list(typeof courseId === 'string' ? courseId : undefined)))
+    wrap(async () => {
+      logIpcInvocation(IPC.LECTURE_LIST, 'start');
+      const result = ok(await LectureService.list(typeof courseId === 'string' ? courseId : undefined));
+      logIpcInvocation(IPC.LECTURE_LIST, 'done', { ok: result.ok, count: Array.isArray(result.data) ? result.data.length : 0 });
+      return result;
+    })
   );
 
   ipcMain.handle(IPC.LECTURE_GET, (_e, id: unknown) =>
@@ -330,8 +360,12 @@ export function registerAllHandlers(): void {
 
   ipcMain.handle(IPC.LECTURE_CREATE, (_e, raw: unknown) =>
     wrap(async () => {
+      logIpcInvocation(IPC.LECTURE_CREATE, 'start');
       const data = LectureCreateSchema.parse(raw);
-      return ok(await LectureService.create(data));
+      const lecture = await LectureService.create(data);
+      const result = ok(lecture);
+      logIpcInvocation(IPC.LECTURE_CREATE, 'done', { ok: result.ok, lectureId: lecture.id });
+      return result;
     })
   );
 

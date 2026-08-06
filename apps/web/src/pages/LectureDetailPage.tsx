@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageHeader, Card, CardBody, Button, Badge, EmptyState, Spinner, Alert } from '@mindflow/ui';
 import { Sparkles, Pencil, Check, X, Clock } from 'lucide-react';
 import { mockLectures } from '../lib/mock-data';
+import { useLectureStore } from '../store/lecture';
 
 interface TranscriptSeg {
   id: string;
@@ -94,6 +95,8 @@ function SegmentRow({ seg, onSave }: { seg: TranscriptSeg; onSave: (id: string, 
 export function LectureDetailPage() {
   const { lectureId } = useParams();
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const selectLecture = useLectureStore((s) => s.selectLecture);
   const [lecture, setLecture] = useState<LocalLecture | null>(null);
   const [segments, setSegments] = useState<TranscriptSeg[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,7 +111,9 @@ export function LectureDetailPage() {
       if (isDesktop && window.electronAPI) {
         const lRes = await window.electronAPI.getLecture(lectureId);
         if (lRes.ok && lRes.data) {
-          setLecture(lRes.data as LocalLecture);
+          const loadedLecture = lRes.data as LocalLecture;
+          setLecture(loadedLecture);
+          selectLecture({ id: loadedLecture.id, title: loadedLecture.title });
         } else {
           setError('Lecture not found');
         }
@@ -124,7 +129,7 @@ export function LectureDetailPage() {
       setLoading(false);
     };
     void load();
-  }, [lectureId, isDesktop]);
+  }, [lectureId, isDesktop, selectLecture]);
 
   const saveEdit = async (segId: string, editedText: string) => {
     if (!isDesktop || !window.electronAPI) return;
@@ -152,11 +157,22 @@ export function LectureDetailPage() {
         title={lecture.title}
         description={lecture.durationSeconds ? `${Math.round(lecture.durationSeconds / 60)} min` : undefined}
         actions={
-          <Link to="/chat">
-            <Button>
-              <Sparkles className="h-4 w-4" aria-hidden="true" /> {t('courseDetail.chat')}
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                selectLecture({ id: lecture.id, title: lecture.title });
+                navigate('/recorder', { state: { lectureId: lecture.id, lectureTitle: lecture.title } });
+              }}
+            >
+              Record
             </Button>
-          </Link>
+            <Link to="/chat">
+              <Button>
+                <Sparkles className="h-4 w-4" aria-hidden="true" /> {t('courseDetail.chat')}
+              </Button>
+            </Link>
+          </div>
         }
       />
 

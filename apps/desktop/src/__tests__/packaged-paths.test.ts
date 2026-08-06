@@ -82,7 +82,7 @@ describe('database.ts — no external process spawning', () => {
 
   it('does not use root-relative asset URLs in web index.html', () => {
     const src = fs.readFileSync(
-      path.join(__dirname, '../../web/index.html'),
+      path.join(__dirname, '../../../web/index.html'),
       'utf8',
     );
     expect(src).not.toContain('href="/');
