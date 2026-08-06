@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
-import { Mic, Square, Pause, Play, AlertTriangle, CheckCircle2, HardDrive, Shield, FileText } from 'lucide-react';
 import {
-  PageHeader,
+  Mic, Square, Pause, Play, AlertTriangle, CheckCircle2, HardDrive,
+  Shield, FileText, Radio, FolderOpen,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
   Card,
   CardBody,
   Button,
@@ -429,21 +432,64 @@ export function RecorderPage() {
 
   const diskFreeGb = diskFreeBytes !== null ? (diskFreeBytes / 1024 / 1024 / 1024).toFixed(1) : null;
   const diskWarning = diskFreeBytes !== null && diskFreeBytes < 500 * 1024 * 1024;
+  const estimatedMinsRemaining = diskFreeBytes !== null
+    ? Math.floor(diskFreeBytes / (1024 * 1024 * 0.5)) // ~0.5 MB/min for opus
+    : null;
 
   return (
-    <div>
-      <PageHeader title={lectureTitle ? `${t('recorder.title')}: ${lectureTitle}` : t('recorder.title')} />
+    <div className="mx-auto max-w-2xl space-y-4">
+      {/* Page title */}
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">
+          {lectureTitle ? `${t('recorder.title')}: ${lectureTitle}` : t('recorder.title')}
+        </h1>
+        <p className="mt-0.5 text-sm text-slate-500">
+          {status === 'idle' ? 'Ready to record' : status === 'recording' ? 'Recording in progress…' : status === 'paused' ? 'Recording paused' : status === 'done' ? 'Saved successfully' : ''}
+        </p>
+      </div>
 
-      {diskWarning && (
-        <Alert tone="danger" className="mb-3">
-          <HardDrive className="me-2 inline h-4 w-4" aria-hidden="true" />
-          Low disk space: {diskFreeGb} GB remaining. Recording may stop automatically.
-        </Alert>
-      )}
+      {/* Disk warning card */}
+      <AnimatePresence>
+        {diskWarning && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <Card className="border-amber-200 bg-amber-50">
+              <CardBody>
+                <div className="flex items-start gap-3">
+                  <HardDrive className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-amber-800">Low Disk Space</p>
+                    <p className="text-sm text-amber-700">
+                      {diskFreeGb} GB remaining
+                      {estimatedMinsRemaining !== null && ` · ~${estimatedMinsRemaining} min of recording left`}
+                    </p>
+                    <p className="mt-0.5 text-xs text-amber-600">Recording will stop automatically when disk is full.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        if (isDesktop && window.electronAPI && 'openStorageSettings' in window.electronAPI) {
+                          void (window.electronAPI as Record<string, () => void>).openStorageSettings?.();
+                        }
+                      }}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" /> Open Storage
+                    </Button>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Microphone selection */}
       {mics.length > 1 && status === 'idle' && (
-        <Card className="mb-4">
+        <Card>
           <CardBody>
             <Select
               label={t('recorder.micStatus')}
@@ -459,37 +505,49 @@ export function RecorderPage() {
         </Card>
       )}
 
+      {/* Main recording card */}
       <Card>
-        <CardBody className="flex flex-col items-center gap-5 py-8">
+        <CardBody className="flex flex-col items-center gap-6 py-10">
           {/* Waveform visualizer */}
-          <div className="flex gap-1" aria-hidden="true" data-testid="waveform">
+          <div
+            className="flex items-center gap-[3px]"
+            aria-hidden="true"
+            data-testid="waveform"
+          >
             {waveform.map((value, index) => (
-              <span
+              <motion.span
                 key={index}
-                className={`w-1.5 rounded-full transition-all ${
+                className={`w-1.5 rounded-full ${
                   status === 'recording'
                     ? audioLevel > 0.5 ? 'bg-red-500' : 'bg-brand-500'
-                    : 'bg-slate-300'
+                    : status === 'paused'
+                    ? 'bg-amber-400'
+                    : 'bg-slate-200'
                 }`}
-                style={{ height: `${Math.max(6, value * 52)}px` }}
+                animate={{ height: `${Math.max(6, value * 64)}px` }}
+                transition={{ duration: 0.1 }}
+                style={{ height: `${Math.max(6, value * 64)}px` }}
               />
             ))}
           </div>
 
-          {/* Timer */}
-          <div className="text-3xl font-semibold tabular-nums text-slate-900" aria-live="polite">
+          {/* Large timer */}
+          <div
+            className="font-mono text-5xl font-bold tabular-nums text-slate-900"
+            aria-live="polite"
+          >
             {formatTime(seconds)}
           </div>
 
           {/* Status badges */}
-          <div className="flex items-center gap-2 flex-wrap justify-center">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             {status === 'recording' && (
               <Badge tone="danger">
-                <span className="me-1 inline-block h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                REC
+                <Radio className="me-1 h-3 w-3 animate-pulse" aria-hidden="true" />
+                RECORDING
               </Badge>
             )}
-            {status === 'paused' && <Badge tone="warning">PAUSED</Badge>}
+            {status === 'paused' && <Badge tone="warning">⏸ PAUSED</Badge>}
             {status === 'stopping' && <Badge tone="info">SAVING…</Badge>}
             {status === 'done' && (
               <Badge tone="success">
@@ -501,31 +559,35 @@ export function RecorderPage() {
             )}
             {privacyMode && (
               <Badge tone="warning">
-                <Shield className="me-1 h-3 w-3" aria-hidden="true" /> Privacy
+                <Shield className="me-1 h-3 w-3" aria-hidden="true" /> Privacy Mode
               </Badge>
             )}
           </div>
 
-          {/* Consent + privacy options */}
+          {/* Consent + privacy options (idle only) */}
           {status === 'idle' && (
-            <div className="flex flex-col gap-2 text-sm text-slate-600">
-              <label className="flex items-center gap-2">
+            <div className="w-full max-w-sm space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm">
+              <label className="flex cursor-pointer items-center justify-between">
+                <span className="text-slate-700">{t('recorder.giveConsent')}</span>
                 <input
                   type="checkbox"
                   data-testid="consent-checkbox"
                   checked={consent}
                   onChange={(e) => setConsent(e.target.checked)}
+                  className="h-4 w-4 accent-brand-600"
                 />
-                {t('recorder.giveConsent')}
               </label>
-              <label className="flex items-center gap-2">
+              <label className="flex cursor-pointer items-center justify-between">
+                <span className="flex items-center gap-1.5 text-slate-700">
+                  <Shield className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+                  Privacy mode
+                </span>
                 <input
                   type="checkbox"
                   checked={privacyMode}
                   onChange={(e) => setPrivacyMode(e.target.checked)}
+                  className="h-4 w-4 accent-brand-600"
                 />
-                <Shield className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
-                Privacy mode (no auto-transcription)
               </label>
             </div>
           )}
@@ -544,26 +606,46 @@ export function RecorderPage() {
                 disabled={!consent}
                 onClick={() => void startRecording()}
                 aria-label={t('recorder.record')}
+                className="gap-2 px-6"
               >
                 <Mic className="h-5 w-5" aria-hidden="true" /> {t('recorder.record')}
               </Button>
             )}
             {status === 'recording' && (
               <>
-                <Button variant="secondary" onClick={() => void pauseRecording()} aria-label={t('recorder.pause')}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void pauseRecording()}
+                  aria-label={t('recorder.pause')}
+                  className="h-12 w-12 rounded-full p-0"
+                >
                   <Pause className="h-5 w-5" aria-hidden="true" />
                 </Button>
-                <Button variant="danger" onClick={() => void stopRecording()} aria-label={t('recorder.stop')}>
-                  <Square className="h-5 w-5" aria-hidden="true" /> {t('recorder.stop')}
+                <Button
+                  variant="danger"
+                  onClick={() => void stopRecording()}
+                  aria-label={t('recorder.stop')}
+                  className="h-12 w-12 rounded-full p-0"
+                >
+                  <Square className="h-5 w-5" aria-hidden="true" />
                 </Button>
               </>
             )}
             {status === 'paused' && (
               <>
-                <Button onClick={() => void resumeRecording()} aria-label={t('recorder.resume')}>
+                <Button
+                  onClick={() => void resumeRecording()}
+                  aria-label={t('recorder.resume')}
+                  className="h-12 w-12 rounded-full p-0"
+                >
                   <Play className="h-5 w-5" aria-hidden="true" />
                 </Button>
-                <Button variant="danger" onClick={() => void stopRecording()} aria-label={t('recorder.stop')}>
+                <Button
+                  variant="danger"
+                  onClick={() => void stopRecording()}
+                  aria-label={t('recorder.stop')}
+                  className="h-12 w-12 rounded-full p-0"
+                >
                   <Square className="h-5 w-5" aria-hidden="true" />
                 </Button>
               </>
@@ -571,6 +653,7 @@ export function RecorderPage() {
             {status === 'stopping' && <Spinner label="Saving…" />}
           </div>
 
+          {/* Mark important */}
           {(status === 'recording' || status === 'paused') && (
             <Button variant="ghost" onClick={markImportant} aria-label={t('recorder.markImportant')}>
               <AlertTriangle className="h-4 w-4" aria-hidden="true" /> {t('recorder.markImportant')}
@@ -578,12 +661,34 @@ export function RecorderPage() {
             </Button>
           )}
 
+          {/* Done state */}
           {status === 'done' && (
-            <div className="flex flex-col items-center gap-3">
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center gap-3"
+            >
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+              </div>
               <p className="text-sm text-slate-600">
                 Recording saved.{privacyMode ? ' Transcription skipped (privacy mode).' : ' Transcription queued.'}
               </p>
               <Button variant="secondary" onClick={reset}>{t('common.back')}</Button>
+            </motion.div>
+          )}
+
+          {/* Disk info strip */}
+          {diskFreeGb !== null && (status === 'recording' || status === 'paused') && (
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-2 text-xs text-slate-500">
+              <HardDrive className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{diskFreeGb} GB free</span>
+              {estimatedMinsRemaining !== null && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>~{estimatedMinsRemaining} min remaining</span>
+                </>
+              )}
             </div>
           )}
         </CardBody>
@@ -591,12 +696,12 @@ export function RecorderPage() {
 
       {/* Important timestamps */}
       {importantTimes.length > 0 && (
-        <Card className="mt-4">
+        <Card>
           <CardBody>
             <p className="mb-2 text-sm font-medium text-slate-700">{t('recorder.markImportant')}</p>
             <div className="flex flex-wrap gap-1">
               {importantTimes.map((time, i) => (
-                <span key={i} className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                <span key={i} className="rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
                   {formatTime(time)}
                 </span>
               ))}
@@ -607,7 +712,7 @@ export function RecorderPage() {
 
       {/* Live Transcript panel */}
       {isDesktop && (status === 'recording' || status === 'paused') && liveTranscript && (
-        <Card className="mt-4" data-testid="live-transcript-panel">
+        <Card data-testid="live-transcript-panel">
           <CardBody>
             <div className="mb-2 flex items-center gap-2">
               <FileText className="h-4 w-4 text-brand-500" aria-hidden="true" />
@@ -621,7 +726,7 @@ export function RecorderPage() {
             </div>
             <div
               ref={liveTranscriptRef}
-              className="max-h-48 overflow-y-auto rounded bg-slate-50 p-3 text-sm text-slate-800 leading-relaxed"
+              className="max-h-48 overflow-y-auto rounded-xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-800"
               aria-live="polite"
               aria-label="Live transcript"
             >
@@ -633,19 +738,15 @@ export function RecorderPage() {
 
       {/* Error */}
       {error && (
-        <Alert tone="danger" className="mt-4">
+        <Alert tone="danger">
           {errorMessages[error]}
           <Button variant="ghost" onClick={reset} className="mt-2">{t('common.retry')}</Button>
         </Alert>
       )}
 
-      {/* Disk space indicator */}
-      {diskFreeGb !== null && (
-        <p className="mt-3 text-xs text-slate-400">
-          <HardDrive className="me-1 inline h-3 w-3" aria-hidden="true" />
-          Free disk: {diskFreeGb} GB
-          {isDesktop && sessionId && ` · Session: ${sessionId.slice(-8)}`}
-        </p>
+      {/* Session info (dev use) */}
+      {isDesktop && sessionId && (
+        <p className="text-xs text-slate-300">Session: {sessionId.slice(-8)}</p>
       )}
     </div>
   );
