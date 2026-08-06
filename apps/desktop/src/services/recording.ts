@@ -315,7 +315,7 @@ export const RecordingService = {
         }
         return fs.readFileSync(chunk.filePath);
       })
-      .filter((buffer): buffer is Buffer => buffer !== null);
+      .filter((buffer): buffer is Buffer<ArrayBuffer> => buffer !== null);
 
     if (buffers.length === 0) {
       throw new Error(`No persisted chunk files found for lecture ${lectureId}`);
