@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, Sparkles, Lightbulb, BrainCircuit, User, Copy, RefreshCw, ThumbsUp, ThumbsDown, BookOpen } from 'lucide-react';
+import { Send, Sparkles, Lightbulb, BrainCircuit, User, Copy, RefreshCw, ThumbsUp, ThumbsDown, BookOpen, AlertTriangle, Settings, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Select,
@@ -18,17 +18,10 @@ interface Message {
   timestamp: Date;
 }
 
-const mockCitations: Citation[] = [
-  {
-    id: 'c1',
-    sourceType: 'TRANSCRIPT_SEGMENT',
-    lectureId: 'lecture-1',
-    transcriptSegmentId: 'seg-2',
-    timestampStart: 4,
-    timestampEnd: 9,
-    sourceLabel: 'Principles of Bioethics',
-  },
-];
+interface CourseOption {
+  id: string;
+  title: string;
+}
 
 const mockAssistantReply =
   'Based on your lecture, **autonomy** means respecting the patient\'s right to make their own medical decisions.\n\nThis principle requires healthcare providers to:\n- Provide complete and accurate information\n- Ensure the patient understands their options\n- Respect the patient\'s final decision, even if you disagree';
@@ -164,14 +157,20 @@ function MessageBubble({ message, onCopy }: { message: Message; onCopy: (text: s
 
 export function ChatPage({ view: _view = 'idle' }: { view?: ChatView }) {
   const { t } = useTranslation();
+  const isDesktop = typeof window !== 'undefined' && !!window.electronAPI;
+
+  const [courses, setCourses] = useState<CourseOption[]>(
+    mockCourses.map((c) => ({ id: c.id, title: c.title }))
+  );
   const [courseId, setCourseId] = useState(mockCourses[0]?.id ?? '');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [aiError, setAiError] = useState<'AI_NOT_CONFIGURED' | 'ERROR' | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const selectedCourse = mockCourses.find((c) => c.id === courseId);
+  const selectedCourse = courses.find((c) => c.id === courseId);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -186,20 +185,91 @@ export function ChatPage({ view: _view = 'idle' }: { view?: ChatView }) {
     }
   }, [input]);
 
+  // Load real courses from desktop API
+  useEffect(() => {
+    if (!isDesktop || !window.electronAPI) return;
+    void (async () => {
+      const res = await window.electronAPI!.listCourses();
+      if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        const loaded = (res.data as Array<{ id: string; title: string }>).map((c) => ({ id: c.id, title: c.title }));
+        setCourses(loaded);
+        setCourseId(loaded[0]!.id);
+      }
+    })();
+  }, [isDesktop]);
+
+  // Load chat history when course changes (desktop only)
+  useEffect(() => {
+    if (!isDesktop || !window.electronAPI || !courseId) return;
+    void (async () => {
+      const res = await window.electronAPI!.getChatHistory(courseId);
+      if (res.ok && Array.isArray(res.data)) {
+        const history: Message[] = (res.data as Array<{ id: string; role: string; content: string; createdAt: string }>).map((m) => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+          timestamp: new Date(m.createdAt),
+        }));
+        setMessages(history);
+      }
+    })();
+  }, [isDesktop, courseId]);
+
   const send = useCallback((text: string) => {
     if (!text.trim()) return;
     const userMessage: Message = { id: `u-${Date.now()}`, role: 'user', content: text, timestamp: new Date() };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
-    window.setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        { id: `a-${Date.now()}`, role: 'assistant', content: mockAssistantReply, citations: mockCitations, timestamp: new Date() },
-      ]);
-      setLoading(false);
-    }, 900);
-  }, []);
+    setAiError(null);
+
+    if (isDesktop && window.electronAPI) {
+      void (async () => {
+        const res = await window.electronAPI!.sendChatMessage({ courseId: courseId || undefined, message: text });
+        if (res.ok && res.data) {
+          const data = res.data as { message: { id: string; content: string; createdAt: string }; sources?: Array<{ segmentId: string; lectureId: string; text: string }> };
+          const citations: Citation[] = (data.sources ?? []).map((s) => ({
+            id: s.segmentId,
+            sourceType: 'TRANSCRIPT_SEGMENT' as const,
+            lectureId: s.lectureId,
+            transcriptSegmentId: s.segmentId,
+            timestampStart: 0,
+            timestampEnd: 0,
+            sourceLabel: s.text.slice(0, 40),
+          }));
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: data.message.id,
+              role: 'assistant',
+              content: data.message.content,
+              citations: citations.length > 0 ? citations : undefined,
+              timestamp: new Date(data.message.createdAt),
+            },
+          ]);
+        } else {
+          const code = res.code ?? '';
+          if (code === 'AI_NOT_CONFIGURED') {
+            setAiError('AI_NOT_CONFIGURED');
+          } else {
+            setAiError('ERROR');
+          }
+          // Remove the optimistically-added user message on error
+          setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
+        }
+        setLoading(false);
+      })();
+    } else {
+      // Fallback mock for non-desktop / development
+      window.setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          { id: `a-${Date.now()}`, role: 'assistant', content: mockAssistantReply, timestamp: new Date() },
+        ]);
+        setLoading(false);
+      }, 900);
+    }
+  }, [isDesktop, courseId]);
 
   const copyToClipboard = (text: string) => {
     void navigator.clipboard.writeText(text);
@@ -227,13 +297,44 @@ export function ChatPage({ view: _view = 'idle' }: { view?: ChatView }) {
           onChange={(e) => setCourseId(e.target.value)}
           className="w-48"
         >
-          {mockCourses.map((course) => (
+          {courses.map((course) => (
             <option key={course.id} value={course.id}>{course.title}</option>
           ))}
         </Select>
       </div>
 
-      {/* Messages */}
+      {/* AI not configured banner */}
+      <AnimatePresence>
+        {aiError && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="mx-1 mt-2 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {aiError === 'AI_NOT_CONFIGURED' ? (
+              <span>
+                AI provider not configured.{' '}
+                <a href="/settings" className="inline-flex items-center gap-0.5 font-medium underline underline-offset-2 hover:text-amber-900">
+                  <Settings className="h-3 w-3" /> Open Settings
+                </a>{' '}
+                to add your API key.
+              </span>
+            ) : (
+              <span>Failed to get a response. Please try again.</span>
+            )}
+            <button
+              type="button"
+              onClick={() => setAiError(null)}
+              className="ml-auto text-amber-600 hover:text-amber-900"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="flex-1 overflow-y-auto px-1 py-4">
         {messages.length === 0 && !loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
