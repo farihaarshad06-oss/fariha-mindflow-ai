@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
@@ -10,12 +10,18 @@ import { mockCourses } from '../lib/mock-data';
 import { apiClient } from '../lib/api';
 import { useLectureStore } from '../store/lecture';
 
+interface CourseOption {
+  id: string;
+  title: string;
+}
+
 export function NewLecturePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const selectLecture = useLectureStore((s) => s.selectLecture);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [courses, setCourses] = useState<CourseOption[]>([]);
   const {
     register,
     handleSubmit,
@@ -26,6 +32,21 @@ export function NewLecturePage() {
   });
 
   const isDesktop = typeof window !== 'undefined' && !!window.electronAPI;
+
+  // Load real courses from the database in Electron mode; fall back to mock data on web.
+  useEffect(() => {
+    if (isDesktop && window.electronAPI) {
+      void window.electronAPI.listCourses().then((res) => {
+        if (res.ok && Array.isArray(res.data)) {
+          setCourses(res.data as CourseOption[]);
+        } else {
+          setCourses([]);
+        }
+      });
+    } else {
+      setCourses(mockCourses.map((c) => ({ id: c.id, title: c.title })));
+    }
+  }, [isDesktop]);
 
   async function onSubmit(data: CreateLectureInput) {
     setSubmitError(null);
@@ -46,7 +67,9 @@ export function NewLecturePage() {
       const lecture = res.data as { id: string; title: string };
       selectLecture({ id: lecture.id, title: lecture.title });
       await queryClient.invalidateQueries({ queryKey: ['lectures'] });
-      navigate(`/lectures/${lecture.id}`, { replace: true });
+      // Navigate directly to the recorder with the new lecture ID in state so
+      // RecorderPage can start recording immediately without an extra "select" step.
+      navigate('/recorder', { state: { lectureId: lecture.id, lectureTitle: lecture.title } });
       return;
     }
 
@@ -68,7 +91,7 @@ export function NewLecturePage() {
             <Input label={t('nav.lectures')} {...register('title')} error={errors.title?.message} />
             <Select label={t('nav.courses')} {...register('courseId')}>
               <option value="">—</option>
-              {mockCourses.map((course) => (
+              {courses.map((course) => (
                 <option key={course.id} value={course.id}>
                   {course.title}
                 </option>

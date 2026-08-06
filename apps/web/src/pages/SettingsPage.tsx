@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader, Card, CardBody, Button, Alert, Select, Input, Spinner } from '@mindflow/ui';
 import { SUPPORTED_LOCALES, LOCALE_LABELS } from '@mindflow/config';
@@ -31,8 +31,28 @@ export function SettingsPage() {
   const [apiKeyProvider, setApiKeyProvider] = useState('openai');
   const [keyStatus, setKeyStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [diagnostics, setDiagnostics] = useState<Record<string, unknown> | null>(null);
+  // Maps providerType → true when a key is already stored in the vault.
+  const [savedProviderKeys, setSavedProviderKeys] = useState<Record<string, boolean>>({});
 
   const isDesktop = typeof window !== 'undefined' && !!window.electronAPI;
+
+  // Standalone helper — queries hasSecret for every stored provider and
+  // updates the savedProviderKeys map.  Defined outside useEffect so it can
+  // also be called after a successful save.
+  const refreshSavedKeys = useCallback(async () => {
+    if (!isDesktop || !window.electronAPI) return;
+    const providersRes = await window.electronAPI.listProviders();
+    if (!providersRes.ok || !Array.isArray(providersRes.data)) return;
+    const providers = providersRes.data as Array<{ id: string; providerType: string }>;
+    const map: Record<string, boolean> = {};
+    await Promise.all(
+      providers.map(async (p) => {
+        const res = await window.electronAPI!.hasSecret(`provider.${p.id}`);
+        map[p.providerType] = !!(res.ok && res.data);
+      }),
+    );
+    setSavedProviderKeys(map);
+  }, [isDesktop]);
 
   useEffect(() => {
     const load = async () => {
@@ -41,11 +61,13 @@ export function SettingsPage() {
         if (res.ok && res.data) setSettings(res.data as DesktopSettings);
         const diagRes = await window.electronAPI.getDiagnostics();
         if (diagRes.ok) setDiagnostics(diagRes.data as Record<string, unknown>);
+        // Load existing key indicators so the user can see which providers are configured.
+        await refreshSavedKeys();
       }
       setLoading(false);
     };
     void load();
-  }, [isDesktop]);
+  }, [isDesktop, refreshSavedKeys]);
 
   const save = async (updates: Partial<DesktopSettings>) => {
     setSaving(true);
@@ -101,8 +123,17 @@ export function SettingsPage() {
 
     const res = await window.electronAPI.setSecret(`provider.${matchingProvider.id}`, apiKey);
     if (res.ok) {
-      setKeyStatus('saved');
-      setApiKey('');
+      // Immediately verify the key was actually persisted to the vault.
+      const verifyRes = await window.electronAPI.hasSecret(`provider.${matchingProvider.id}`);
+      if (verifyRes.ok && verifyRes.data) {
+        setKeyStatus('saved');
+        setApiKey('');
+        // Refresh all provider key indicators so the UI reflects the new state.
+        await refreshSavedKeys();
+      } else {
+        setKeyStatus('error');
+        setKeyErrorMessage('Key was not persisted. OS encryption may be unavailable.');
+      }
     } else {
       setKeyStatus('error');
       setKeyErrorMessage(`Failed to save key: ${res.error ?? 'OS encryption may be unavailable.'}`);
@@ -198,12 +229,15 @@ export function SettingsPage() {
                 onChange={(e) => setApiKeyProvider(e.target.value)}
                 className="max-w-xs"
               >
-                <option value="openai">OpenAI</option>
-                <option value="azure">Azure OpenAI</option>
-                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI{savedProviderKeys['openai'] ? ' ✓' : ''}</option>
+                <option value="azure">Azure OpenAI{savedProviderKeys['azure'] ? ' ✓' : ''}</option>
+                <option value="gemini">Google Gemini{savedProviderKeys['gemini'] ? ' ✓' : ''}</option>
                 <option value="ollama">Ollama (no key needed)</option>
                 <option value="lmstudio">LM Studio (no key needed)</option>
               </Select>
+              {savedProviderKeys[apiKeyProvider] && !['ollama', 'lmstudio'].includes(apiKeyProvider) && (
+                <p className="text-xs text-emerald-600">✓ A key is already saved for this provider. Enter a new key below to replace it.</p>
+              )}
               {!['ollama', 'lmstudio'].includes(apiKeyProvider) && (
                 <div className="flex gap-2">
                   <Input
@@ -219,7 +253,7 @@ export function SettingsPage() {
                   </Button>
                 </div>
               )}
-              {keyStatus === 'saved' && <Alert tone="success">Key saved securely.</Alert>}
+              {keyStatus === 'saved' && <Alert tone="success">Key saved and verified.</Alert>}
               {keyStatus === 'error' && <Alert tone="danger">{keyErrorMessage ?? 'Failed to save key. OS encryption may be unavailable.'}</Alert>}
             </div>
           </CardBody>
