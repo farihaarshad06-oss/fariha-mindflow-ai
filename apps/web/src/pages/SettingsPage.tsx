@@ -160,7 +160,7 @@ export function SettingsPage() {
       } else {
         setKeyStatus('error');
         setKeyErrorMessage('Key was not persisted. Please try again.');
-        setTimeout(() => setKeyErrorMessage(null), 5000);
+        setTimeout(() => { setKeyStatus('idle'); setKeyErrorMessage(null); }, 5000);
       }
     } else {
       setKeyStatus('error');

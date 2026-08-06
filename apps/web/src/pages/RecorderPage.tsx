@@ -110,8 +110,6 @@ export function RecorderPage() {
     'MediaRecorder' in window &&
     !!navigator.mediaDevices?.getUserMedia;
 
-  const recordingLanguage = preferredLanguage;
-
   // ── Enumerate microphones ────────────────────────────────────────────
   useEffect(() => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -314,7 +312,7 @@ export function RecorderPage() {
           lectureId,
           microphoneId: selectedMic,
           privacyMode,
-          language: recordingLanguage,
+          language: preferredLanguage,
         });
         if (res.ok && res.data) {
           newSessionId = (res.data as { id: string }).id;
@@ -377,7 +375,7 @@ export function RecorderPage() {
       setError(isPermission ? 'permissionDenied' : 'interrupted');
       setStatus('error');
     }
-  }, [supported, selectedMic, privacyMode, isDesktop, lectureId, flushChunk, recordingLanguage]);
+  }, [supported, selectedMic, privacyMode, isDesktop, lectureId, flushChunk, preferredLanguage]);
 
   // ── Pause ────────────────────────────────────────────────────────────
   const pauseRecording = useCallback(async () => {
