@@ -203,7 +203,7 @@ export function RecorderPage() {
       }
     });
     return unsub;
-  }, [isDesktop]);
+  }, [isDesktop, lectureId]);
 
   // ── Auto-scroll live transcript to bottom ────────────────────────────
   useEffect(() => {
