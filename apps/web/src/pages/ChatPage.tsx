@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, Sparkles, Lightbulb, BrainCircuit, User, Copy, RefreshCw, ThumbsUp, ThumbsDown, BookOpen, AlertTriangle, Settings } from 'lucide-react';
+import { Send, Sparkles, Lightbulb, BrainCircuit, User, Copy, RefreshCw, ThumbsUp, ThumbsDown, BookOpen, AlertTriangle, Settings, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Select,
@@ -228,13 +228,13 @@ export function ChatPage({ view: _view = 'idle' }: { view?: ChatView }) {
         const res = await window.electronAPI!.sendChatMessage({ courseId: courseId || undefined, message: text });
         if (res.ok && res.data) {
           const data = res.data as { message: { id: string; content: string; createdAt: string }; sources?: Array<{ segmentId: string; lectureId: string; text: string }> };
-          const citations: Citation[] = (data.sources ?? []).map((s, i) => ({
+          const citations: Citation[] = (data.sources ?? []).map((s) => ({
             id: s.segmentId,
             sourceType: 'TRANSCRIPT_SEGMENT' as const,
             lectureId: s.lectureId,
             transcriptSegmentId: s.segmentId,
-            timestampStart: i,
-            timestampEnd: i,
+            timestampStart: 0,
+            timestampEnd: 0,
             sourceLabel: s.text.slice(0, 40),
           }));
           setMessages((prev) => [
@@ -330,7 +330,7 @@ export function ChatPage({ view: _view = 'idle' }: { view?: ChatView }) {
               className="ml-auto text-amber-600 hover:text-amber-900"
               aria-label="Dismiss"
             >
-              ×
+              <X className="h-4 w-4" />
             </button>
           </motion.div>
         )}
