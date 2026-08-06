@@ -40,7 +40,10 @@ export const createCourseSchema = z.object({
 export type CreateCourseInput = z.infer<typeof createCourseSchema>;
 
 export const createLectureSchema = z.object({
-  courseId: z.string().uuid().optional(),
+  courseId: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.string().uuid().optional(),
+  ),
   title: z.string().min(2).max(200),
   consentAcknowledged: z.boolean(),
 });
