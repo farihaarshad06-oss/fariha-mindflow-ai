@@ -52,7 +52,10 @@ export function NewLecturePage() {
       const lecture = res.data as { id: string; title: string };
       selectLecture({ id: lecture.id, title: lecture.title });
       await queryClient.invalidateQueries({ queryKey: ['lectures'] });
-      navigate(`/lectures/${lecture.id}`, { replace: true });
+      navigate('/recorder', {
+        state: { lectureId: lecture.id, lectureTitle: lecture.title, consentAcknowledged: data.consentAcknowledged },
+        replace: true,
+      });
       return;
     }
 

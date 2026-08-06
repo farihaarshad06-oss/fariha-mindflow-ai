@@ -66,11 +66,11 @@ export function RecorderPage() {
   // lectureId MUST come from navigation state (set by NewLecturePage after
   // creating the lecture in the Electron database). A fake timestamp-based ID
   // fails Zod .cuid() validation in every IPC handler.
-  const navState = (location.state ?? {}) as { lectureId?: string; lectureTitle?: string };
+  const navState = (location.state ?? {}) as { lectureId?: string; lectureTitle?: string; consentAcknowledged?: boolean };
   const lectureId = navState.lectureId ?? selectedLecture?.id ?? '';
   const lectureTitle = navState.lectureTitle ?? selectedLecture?.title;
 
-  const [consent, setConsent] = useState(false);
+  const [consent, setConsent] = useState(navState.consentAcknowledged === true);
   const [privacyMode, setPrivacyMode] = useState(false);
   const [status, setStatus] = useState<RecorderStatus>('idle');
   const [error, setError] = useState<RecorderError>(null);
